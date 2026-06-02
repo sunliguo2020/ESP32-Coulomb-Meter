@@ -1,0 +1,7 @@
+--c99 -c --cpu Cortex-M3 -g -O0 --apcs=interwork --split_sections -I..\STM32_LIB\inc -I..\SYS -I..\CMSIS -I..\APP -I..\APP\led -I..\APP\OLED -I..\APP\rc522 -I..\APP\key -I..\APP\fingerprint -I..\APP\lcd1602
+-I E:\stm32code\f103\11-lcd1602\MDK-ARM\RTE
+-I D:\Keil_v5\ARM\PACK\Keil\STM32F1xx_DFP\2.2.0
+-I D:\Keil_v5\ARM\CMSIS\Include
+-I D:\Keil_v5\ARM\PACK\Keil\STM32F1xx_DFP\2.2.0\Device\Include
+-D__UVISION_VERSION="514" -DSTM32F10X_MD -DSTM32F10X_MD -DUSE_STDPERIPH_DRIVER
+-o .\objects\fp.o --omf_browse .\objects\fp.crf --depend .\objects\fp.d "..\APP\fingerprint\fp.c"

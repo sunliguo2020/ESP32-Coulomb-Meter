@@ -1,0 +1,6 @@
+--cpu Cortex-M3 -g --apcs=interwork 
+-I E:\f103\40-tft_1_54_1\MDK-ARM\RTE
+-I D:\software\keil5\ARM\PACK\Keil\STM32F1xx_DFP\1.0.5\Device\Include
+-I D:\software\keil5\ARM\CMSIS\Include
+--pd "__UVISION_VERSION SETA 514" --pd "STM32F10X_MD SETA 1"
+--list .\listings\startup_stm32f10x_md.lst --xref -o .\objects\startup_stm32f10x_md.o --depend .\objects\startup_stm32f10x_md.d "..\CMSIS\startup_stm32f10x_md.s"

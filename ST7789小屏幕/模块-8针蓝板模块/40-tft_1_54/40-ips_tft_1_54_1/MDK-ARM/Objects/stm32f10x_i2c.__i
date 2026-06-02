@@ -1,0 +1,6 @@
+--c99 -c --cpu Cortex-M3 -g -O0 --apcs=interwork --split_sections -I..\STM32_LIB\inc -I..\SYS -I..\CMSIS -I..\APP -I..\APP\led -I..\APP\OLED -I..\APP\rc522 -I..\APP\key -I..\APP\fingerprint -I..\APP\lcd1602 -I..\APP\lcd12864 -I..\APP\tftlcd -I..\APP\LCD --locale=english
+-I E:\f103\40-ips_tft_1_54_1\MDK-ARM\RTE
+-I D:\software\keil5\ARM\PACK\Keil\STM32F1xx_DFP\1.0.5\Device\Include
+-I D:\software\keil5\ARM\CMSIS\Include
+-D__UVISION_VERSION="514" -DSTM32F10X_MD -DSTM32F10X_MD -DUSE_STDPERIPH_DRIVER
+-o .\objects\stm32f10x_i2c.o --omf_browse .\objects\stm32f10x_i2c.crf --depend .\objects\stm32f10x_i2c.d "..\STM32_LIB\src\stm32f10x_i2c.c"
