@@ -40,6 +40,7 @@
 #include <Wire.h>
 #include <INA226.h>
 #include <Preferences.h>
+#include <WiFi.h>
 
 // ==================== 引脚定义 (基于网络表 Netlist_ESP32_库仑计_2026-06-08.enet) ====================
 // I2C - INA226
@@ -85,7 +86,7 @@
 #define MAX_CURRENT     80.0
 
 // ==================== 全局对象 ====================
-TFT_eSPI tft = TFT_eSPI();
+TFT_eSPI tft = TFT_eSPI(TFT_CS, TFT_DC, TFT_RST, TFT_MOSI, TFT_SCLK);
 INA226 ina226(0x40);
 Preferences preferences;
 
