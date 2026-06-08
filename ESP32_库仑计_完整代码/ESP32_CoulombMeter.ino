@@ -18,7 +18,7 @@
  * - 采样电阻: 默认1mΩ (最大80A), 可改为2mΩ(40A)或4mΩ(20A)
  * - 电源: MP9486A (U3) 降压 + AMS1117-3.3 (U5) 稳压
  * - NTC温度检测 (GPIO39)
- * - 风扇PWM控制 (GPIO16)
+ * - BMS串口 (UART1: RX=GPIO16, TX=GPIO17) 接电池保护板
  * - 5路继电器输出 (GPIO14/27/4/33/32)
  * - 按键: MENU(GPIO0), LEFT(GPIO18), RIGHT(GPIO19)
  * 
@@ -67,8 +67,9 @@
 #define RELAY4_PIN  33  // U2.9  → GPIO33 (K2)
 #define RELAY5_PIN  32  // U2.8  → GPIO32 (K3)
 
-// 风扇控制
-#define FAN_PWM     16  // U2.27 → GPIO16
+// BMS串口 (接电池保护板) - UART1
+#define BMS_RX      16  // U2.27 → RXD1 → H1.2 (接保护板TX)
+#define BMS_TX      17  // U2.28 → TXD1 → H1.3 (接保护板RX)
 
 // NTC温度检测
 #define NTC_PIN     39  // U2.5  → GPIO39
@@ -110,8 +111,6 @@ float fullVoltage = 14.6;
 float batteryCapacity = 100;
 
 bool relayState[5] = {false, false, false, false, false};
-bool fanState = false;
-int fanSpeed = 0;
 
 bool wifiConnected = false;
 bool activated = false;
@@ -225,11 +224,10 @@ void setupHardware() {
     digitalWrite(relayPins[i], LOW);
   }
   
-  pinMode(FAN_PWM, OUTPUT);
-  ledcSetup(0, 25000, 8);
-  ledcAttachPin(FAN_PWM, 0);
-  ledcWrite(0, 0);
-  
+  // 初始化BMS串口 (UART1, 9600波特率, 接电池保护板)
+  Serial1.begin(9600, SERIAL_8N1, BMS_RX, BMS_TX);
+  Serial.println("✅ BMS串口(UART1)初始化完成 (RX=GPIO16, TX=GPIO17)");
+
   pinMode(KEY_MENU, INPUT_PULLUP);
   pinMode(KEY_LEFT, INPUT_PULLUP);
   pinMode(KEY_RIGHT, INPUT_PULLUP);
@@ -615,7 +613,6 @@ void handleATRestore() {
   batteryCells = 4; batteryType = 0; fullVoltage = 14.6; batteryCapacity = 100;
   voltageCalibOffset = 0; currentCalibOffset = 0;
   for (int i = 0; i < 5; i++) { relayState[i] = false; setRelay(i, false); }
-  fanState = false; fanSpeed = 0;
   Serial.println("✅ 恢复出厂设置完成！");
   Serial.println("   默认网页管理员: admin");
   Serial.println("   默认热点管理页面: http://192.168.0.1");
@@ -653,8 +650,6 @@ void saveData() {
   preferences.putFloat("fullVolt", fullVoltage);
   preferences.putFloat("battCap", batteryCapacity);
   for (int i = 0; i < 5; i++) { char key[8]; sprintf(key, "relay%d", i); preferences.putBool(key, relayState[i]); }
-  preferences.putBool("fanState", fanState);
-  preferences.putInt("fanSpeed", fanSpeed);
   preferences.end();
   Serial.println("✅ 数据已保存");
 }
@@ -667,8 +662,6 @@ void loadData() {
   batteryType = preferences.getInt("battType", 0);
   fullVoltage = preferences.getFloat("fullVolt", 14.6);
   batteryCapacity = preferences.getFloat("battCap", 100);
-  fanState = preferences.getBool("fanState", false);
-  fanSpeed = preferences.getInt("fanSpeed", 0);
   String savedSSID = preferences.getString("wifiSSID", "");
   String savedPass = preferences.getString("wifiPass", "");
   for (int i = 0; i < 5; i++) { char key[8]; sprintf(key, "relay%d", i); relayState[i] = preferences.getBool(key, false); setRelay(i, relayState[i]); }
