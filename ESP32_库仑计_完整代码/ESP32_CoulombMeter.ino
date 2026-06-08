@@ -29,34 +29,38 @@
 #include <INA226.h>
 #include <Preferences.h>
 
-// ==================== 引脚定义 (基于网络表) ====================
+// ==================== 引脚定义 (基于网络表 Netlist_ESP32_库仑计_2026-06-08.enet) ====================
 // I2C - INA226
 #define I2C_SDA 21  // U2.33 → SDA → U70.4
 #define I2C_SCL 22  // U2.36 → SCL → U70.5
 
-// TFT 屏幕 (1.8寸 SPI) - CN4
-// CN4引脚: 1=VDD, 2=SCL, 3=SDA, 4=RST, 5=DC, 6=CS, 7=BLK
-#define TFT_CS   5   // U2.29 → GPIO5
-#define TFT_DC   23  // U2.37 → GPIO23
-#define TFT_RST  17  // 默认
-#define TFT_SCLK 18  // U2.30 → GPIO18
-#define TFT_MOSI 19  // U2.31 → GPIO19
-#define TFT_BLK  4   // U2.26 → GPIO4 (WK_PWM)
+// TFT 屏幕 (1.8寸 SPI) - CN8（实际PCB上的屏幕接口）
+// CN8引脚: 1=GND, 2=VCC, 3=SCK(GPIO15), 4=SDA(GPIO13), 5=RES(GPIO25), 6=DC(GPIO26), 7=BLK(GPIO12)
+// 注意：CN8为7针接口无专用CS引脚（7针TFT模块CS接地常选）
+// 使用软件SPI（硬件SPI引脚被其他功能占用）
+#define TFT_CS   -1  // 7针模块CS接地常开，无需控制
+#define TFT_DC   26  // CN8.6 → U2.11 → GPIO26
+#define TFT_RST  25  // CN8.5 → U2.10 → GPIO25
+#define TFT_SCLK 15  // CN8.3 → U2.23 → GPIO15（非HW SPI，需软件SPI）
+#define TFT_MOSI 13  // CN8.4 → U2.16 → GPIO13（非HW SPI，需软件SPI）
+#define TFT_BLK  12  // CN8.7 → U2.14 → GPIO12
 
-// 按键 (网络表: EN, LEFT, MENU, RIGHT)
-#define KEY_MENU   36  // U2.4  → GPIO36 → MENU
-#define KEY_LEFT   0   // U2.25 → GPIO0  → LEFT (也连MENU按键)
-#define KEY_RIGHT  35  // U2.7  → GPIO35 → RIGHT
-#define KEY_EN     34  // U2.6  → GPIO34 → EN
+// 按键 (基于网络表)
+// MENU按键 → GPIO0, LEFT按键 → GPIO18, RIGHT按键 → GPIO19
+// EN按键为硬件复位（连接ESP32 CHIP_PU/EN引脚），不可用GPIO读取
+#define KEY_MENU   0   // MENU按键 → U2.25 → GPIO0
+#define KEY_LEFT   18  // LEFT按键 → U2.30 → GPIO18
+#define KEY_RIGHT  19  // RIGHT按键 → U2.31 → GPIO19
+// EN按键为ESP32硬件复位引脚，不可作为普通GPIO输入
 
-// 继电器输出 (网络表: CN8) - 项目说明为5路
-// CN8引脚: 1=GND, 2=VCC, 3=SCK, 4=SDA, 5=RES, 6=DC, 7=BLK
-#define RELAY1_PIN  15  // U2.23 → GPIO15 → CN8.3
-#define RELAY2_PIN  13  // U2.16 → GPIO13 → CN8.4
-#define RELAY3_PIN  25  // U2.10 → GPIO25 → CN8.5
-#define RELAY4_PIN  26  // U2.11 → GPIO26 → CN8.6
-#define RELAY5_PIN  14  // U2.13 → GPIO14
-// RELAY6_PIN 12  // 保留未启用 (项目说明为5路)
+// 继电器输出 - 使用不与TFT/按键冲突的可用GPIO
+// PCB上无专用继电器接口，以下为ESP32空闲GPIO
+#define RELAY1_PIN  14  // U2.13 → GPIO14
+#define RELAY2_PIN  27  // U2.12 → GPIO27
+#define RELAY3_PIN  4   // U2.26 → GPIO4 (K1)
+#define RELAY4_PIN  33  // U2.9  → GPIO33 (K2)
+#define RELAY5_PIN  32  // U2.8  → GPIO32 (K3)
+// 备用: GPIO5 (U2.29), GPIO23 (U2.37)
 
 // 风扇控制
 #define FAN_PWM     16  // U2.27 → GPIO16
@@ -245,11 +249,10 @@ void setupHardware() {
   ledcAttachPin(FAN_PWM, 0);
   ledcWrite(0, 0);
   
-  // 按键输入
+  // 按键输入 (仅3个可用按键: MENU/LEFT/RIGHT，EN为硬件复位无法读取)
   pinMode(KEY_MENU, INPUT_PULLUP);
   pinMode(KEY_LEFT, INPUT_PULLUP);
   pinMode(KEY_RIGHT, INPUT_PULLUP);
-  pinMode(KEY_EN, INPUT_PULLUP);
   
   // ADC配置
   analogReadResolution(12);
@@ -386,8 +389,8 @@ void readINA226() {
 }
 
 void readBatteryVoltage() {
-  // GPIO34 (EN按键) 也用作ADC读取电池电压
-  int adcValue = analogRead(KEY_EN);
+  // GPIO34 用作ADC读取电池电压（注意：EN为硬件复位，GPIO34实际用作ADC）
+  int adcValue = analogRead(34); // GPIO34
   // 分压比需根据实际电路调整
   batteryVoltage = (adcValue / 4095.0) * 3.3 * 5.0;
 }
@@ -655,11 +658,11 @@ void btnBt2Callback(const String &state) {
 }
 
 // ==================== 本地按键处理 ====================
+// 注意: EN按键为ESP32硬件复位引脚(CHIP_PU)，不可通过GPIO读取
+// 只有3个按键可用: MENU(GPIO0), LEFT(GPIO18), RIGHT(GPIO19)
 void handleButtons() {
   static unsigned long lastBtnCheck = 0;
-  static bool lastMenu = HIGH, lastLeft = HIGH, lastRight = HIGH, lastEn = HIGH;
-  static unsigned long enPressStart = 0;
-  static bool enLongPressHandled = false;
+  static bool lastMenu = HIGH, lastLeft = HIGH, lastRight = HIGH;
   
   if (millis() - lastBtnCheck < 50) return;
   lastBtnCheck = millis();
@@ -667,53 +670,12 @@ void handleButtons() {
   bool menu = digitalRead(KEY_MENU);
   bool left = digitalRead(KEY_LEFT);
   bool right = digitalRead(KEY_RIGHT);
-  bool en = digitalRead(KEY_EN);
   
   if (lastMenu == HIGH && menu == LOW) Serial.println("MENU按键");
   if (lastLeft == HIGH && left == LOW) Serial.println("LEFT按键");
   if (lastRight == HIGH && right == LOW) Serial.println("RIGHT按键");
   
-  // EN按键：短按打印信息，长按3秒进入WiFi配网模式
-  if (lastEn == HIGH && en == LOW) {
-    // 按键按下
-    enPressStart = millis();
-    enLongPressHandled = false;
-    Serial.println("EN按键按下（长按3秒进入WiFi配网）");
-  }
-  
-  if (lastEn == LOW && en == LOW) {
-    // 按键持续按住，检测长按
-    if (!enLongPressHandled && (millis() - enPressStart >= 3000)) {
-      enLongPressHandled = true;
-      Serial.println("🔁 长按EN按键触发：进入WiFi配网模式...");
-      
-      // 屏幕提示
-      tft.fillScreen(TFT_BLACK);
-      tft.setTextColor(TFT_YELLOW, TFT_BLACK);
-      tft.setTextSize(1);
-      tft.drawString("WiFi 配网模式", 25, 40);
-      tft.setTextColor(TFT_WHITE, TFT_BLACK);
-      tft.drawString("请用手机连接", 30, 60);
-      tft.drawString("Blinker热点", 35, 75);
-      tft.drawString("打开App配置WiFi", 20, 90);
-      
-      // 清除已保存的WiFi信息，重新进入配网模式
-      Blinker.reset();
-      
-      // 重新初始化Blinker进入配网模式
-      delay(500);
-      Blinker.begin(auth);
-    }
-  }
-  
-  if (lastEn == LOW && en == HIGH) {
-    // 按键释放
-    if (!enLongPressHandled) {
-      Serial.println("EN按键短按");
-    }
-  }
-  
-  lastMenu = menu; lastLeft = left; lastRight = right; lastEn = en;
+  lastMenu = menu; lastLeft = left; lastRight = right;
 }
 
 // ==================== 数据保存与加载 ====================
