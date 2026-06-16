@@ -1,0 +1,114 @@
+﻿	LCD_RES_Clr();//
+
+	delay_100us(100);
+	LCD_RES_Set();
+
+	delay_100us(100);
+	WDTR = 0x5A;
+
+	delay_100us(100);
+	//************* Start Initial Sequence **********//
+	LCD_WR_REG(0x11); //Sleep out 
+
+	delay_100us(120);  
+	//************* Start Initial Sequence **********// 
+	WDTR = 0x5A;
+	LCD_WR_REG(0x36);
+	if(USE_HORIZONTAL==0)LCD_WR_DATA8(0x00);
+	else if(USE_HORIZONTAL==1)LCD_WR_DATA8(0xC0);
+	else if(USE_HORIZONTAL==2)LCD_WR_DATA8(0x70);
+	else LCD_WR_DATA8(0xA0); 
+
+LCD_WR_REG(0x3A);     
+LCD_WR_DATA8(0x55);   
+
+LCD_WR_REG(0xB2);     
+LCD_WR_DATA8(0x1F);   
+LCD_WR_DATA8(0x1F);   
+LCD_WR_DATA8(0x00);   
+LCD_WR_DATA8(0x33);   
+LCD_WR_DATA8(0x33);   
+
+LCD_WR_REG(0xB7);     
+LCD_WR_DATA8(0x35);   
+
+LCD_WR_REG(0xBB);     
+LCD_WR_DATA8(0x2B);   
+
+LCD_WR_REG(0xC0);     
+LCD_WR_DATA8(0x2C);   
+
+LCD_WR_REG(0xC2);     
+LCD_WR_DATA8(0x01);   
+
+LCD_WR_REG(0xC3);     
+LCD_WR_DATA8(0x0F);   
+
+LCD_WR_REG(0xC4);     
+LCD_WR_DATA8(0x20);   //VDV, 0x20:0v
+
+LCD_WR_REG(0xC6);     
+LCD_WR_DATA8(0x13);   //0x13:60Hz   
+
+LCD_WR_REG(0xD0);     
+LCD_WR_DATA8(0xA4);   
+LCD_WR_DATA8(0xA1);   
+
+LCD_WR_REG(0xD6);     
+LCD_WR_DATA8(0xA1);   //sleep in后，gate输出为GND
+
+LCD_WR_REG(0xE0);     
+LCD_WR_DATA8(0xF0);   
+LCD_WR_DATA8(0x04);   
+LCD_WR_DATA8(0x07);   
+LCD_WR_DATA8(0x04);   
+LCD_WR_DATA8(0x04);   
+LCD_WR_DATA8(0x04);   
+LCD_WR_DATA8(0x25);   
+LCD_WR_DATA8(0x33);   
+LCD_WR_DATA8(0x3C);   
+LCD_WR_DATA8(0x36);   
+LCD_WR_DATA8(0x14);   
+LCD_WR_DATA8(0x12);   
+LCD_WR_DATA8(0x29);   
+LCD_WR_DATA8(0x30);   
+
+LCD_WR_REG(0xE1);     
+LCD_WR_DATA8(0xF0);   
+LCD_WR_DATA8(0x02);   
+LCD_WR_DATA8(0x04);   
+LCD_WR_DATA8(0x05);   
+LCD_WR_DATA8(0x05);   
+LCD_WR_DATA8(0x21);   
+LCD_WR_DATA8(0x25);   
+LCD_WR_DATA8(0x32);   
+LCD_WR_DATA8(0x3B);   
+LCD_WR_DATA8(0x38);   
+LCD_WR_DATA8(0x12);   
+LCD_WR_DATA8(0x14);   
+LCD_WR_DATA8(0x27);   
+LCD_WR_DATA8(0x31);   
+
+LCD_WR_REG(0xE4);     
+LCD_WR_DATA8(0x1D);   //使用240根gate  (N+1)*8
+LCD_WR_DATA8(0x00);   //设定gate起点位置
+LCD_WR_DATA8(0x00);   //当gate没有用完时，bit4(TMG)设为0
+
+LCD_WR_REG(0x21);     
+
+LCD_WR_REG(0x29);     
+/*
+LCD_WR_REG(0x2A);     //Column Address Set
+LCD_WR_DATA8(0x00);   
+LCD_WR_DATA8(0x00);   //0
+LCD_WR_DATA8(0x00);   
+LCD_WR_DATA8(0xEF);   //239
+
+LCD_WR_REG(0x2B);     //Row Address Set
+LCD_WR_DATA8(0x00);   
+LCD_WR_DATA8(0x00);   //0
+LCD_WR_DATA8(0x00);   
+LCD_WR_DATA8(0xEF);   //239
+
+*/
+LCD_WR_REG(0x2C);     
