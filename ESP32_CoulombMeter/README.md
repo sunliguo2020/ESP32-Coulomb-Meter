@@ -153,8 +153,12 @@ PCB上使用2个2512封装采样电阻并联，默认总阻值约2mΩ。
 
 ## 依赖库
 
+- 打开 Arduino IDE → 点击顶部菜单 **项目 → 加载库 → 管理库...**
+- 搜索框输入：依赖库名称，点安装
+- 安装完成**重启 Arduino IDE**，再编译
+
 - Blinker (点灯科技)
 - TFT_eSPI (屏幕驱动)
 - INA226 (电流检测)
 - Preferences (数据存储)
-- Wire (I2C通信)
+- Wire (I2C通信)  已经内置在 ESP32 Arduino Core 中
