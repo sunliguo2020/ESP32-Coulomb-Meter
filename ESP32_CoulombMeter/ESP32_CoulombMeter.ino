@@ -36,6 +36,7 @@
  */
 
 #define BLINKER_APCONFIG
+#define BLINKER_WIFI
 #include <Blinker.h>
 #include <TFT_eSPI.h>
 #include <Wire.h>
@@ -88,7 +89,7 @@
 
 // ==================== 全局对象 ====================
 TFT_eSPI tft = TFT_eSPI();   // 引脚配置在 User_Setup.h 中
-INA226 ina226(0x40);
+INA226 ina226(0x44);  // 实际I2C地址（A1=VS+, A0=GND）
 Preferences preferences;
 
 // ==================== 点灯科技密钥 ====================
@@ -209,7 +210,7 @@ void setup() {
 
 void setupHardware() {
   Wire.begin(I2C_SDA, I2C_SCL);
-  
+
   if (!ina226.begin()) {
     Serial.println("❌ INA226 初始化失败！请检查I2C连接");
   } else {
