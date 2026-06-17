@@ -353,6 +353,9 @@ void calculateBatteryPercent() {
 // ==================== 图形化屏幕显示 ====================
 void updateDisplay() {
   static bool firstRun = true;
+  static bool lastWifiState = false;
+  static bool lastRelayState[5] = {false, false, false, false, false};
+
   if (firstRun) {
     tft.fillScreen(TFT_BLACK);
     firstRun = false;
@@ -371,11 +374,14 @@ void updateDisplay() {
     tft.drawFastHLine(0, 23, 240, TFT_DARKGREY);
   }
 
-  // 标题栏（WiFi状态可能变化，每次刷新）
-  tft.fillRect(0, 0, 240, 22, TFT_NAVY);
-  tft.setTextColor(TFT_WHITE, TFT_NAVY); tft.setTextSize(1);
-  tft.drawString("ESP32 库仑计", 3, 4);
-  drawWifiIcon(210, 2, wifiConnected);
+  // 标题栏 - 仅在首次或 WiFi 状态变化时刷新
+  if (firstRun || wifiConnected != lastWifiState) {
+    tft.fillRect(0, 0, 240, 22, TFT_NAVY);
+    tft.setTextColor(TFT_WHITE, TFT_NAVY); tft.setTextSize(1);
+    tft.drawString("ESP32 库仑计", 3, 4);
+    drawWifiIcon(210, 2, wifiConnected);
+    lastWifiState = wifiConnected;
+  }
 
   // 动态数值 - 使用带背景色的文字覆盖旧值
   tft.setTextColor(TFT_WHITE, TFT_BLACK); tft.setTextSize(2);
@@ -396,7 +402,13 @@ void updateDisplay() {
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.drawString(String(temperature, 1) + "C  ", 55, 180);
 
-  for (int i = 0; i < 5; i++) drawRelayIcon(165 + i * 14, 180, relayState[i]);
+  // 继电器图标 - 仅在状态变化时刷新
+  for (int i = 0; i < 5; i++) {
+    if (firstRun || relayState[i] != lastRelayState[i]) {
+      drawRelayIcon(165 + i * 14, 180, relayState[i]);
+      lastRelayState[i] = relayState[i];
+    }
+  }
 
   String typeStr[] = {"LFP", "NCM", "Pb"};
   tft.setTextColor(TFT_GREEN, TFT_BLACK);
