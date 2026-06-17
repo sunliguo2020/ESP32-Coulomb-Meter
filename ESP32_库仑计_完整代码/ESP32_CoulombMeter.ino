@@ -35,6 +35,7 @@
  *   注意：激活状态不受影响
  */
 
+#define BLINKER_APCONFIG
 #include <Blinker.h>
 #include <TFT_eSPI.h>
 #include <Wire.h>
@@ -86,7 +87,7 @@
 #define MAX_CURRENT     80.0
 
 // ==================== 全局对象 ====================
-TFT_eSPI tft = TFT_eSPI(TFT_CS, TFT_DC, TFT_RST, TFT_MOSI, TFT_SCLK);
+TFT_eSPI tft = TFT_eSPI();   // 引脚配置在 User_Setup.h 中
 INA226 ina226(0x40);
 Preferences preferences;
 
@@ -134,7 +135,8 @@ BlinkerNumber NUM_BATTERY("num-ahb");
 BlinkerNumber NUM_DAH("num-dah");
 BlinkerNumber NUM_DWH("num-dwh");
 BlinkerNumber NUM_CURRENT("num-5up");
-BlinkerChart CHART_POWER("cha-9ay");
+// BlinkerChart 在当前 Blinker 库中不可用，暂时移除图表功能
+// 可后续通过 Blinker 自定义数据接口实现
 BlinkerButton BTN_UPDATE("btn-update");
 BlinkerButton BTN_OUT1("btn-out1");
 BlinkerButton BTN_OUT2("btn-out2");
@@ -214,9 +216,10 @@ void setupHardware() {
     Serial.println("✅ INA226 初始化成功");
     Serial.printf("   采样电阻: %.0fmΩ, 最大电流: %.0fA\n", SHUNT_RESISTOR * 1000, MAX_CURRENT);
     ina226.setMaxCurrentShunt(MAX_CURRENT, SHUNT_RESISTOR);
-    ina226.setAveraging(INA226_AVG_128);
-    ina226.setConversionTime(INA226_CONV_TIME_1100US);
-    ina226.setMode(INA226_MODE_CONTINUOUS);
+    ina226.setAverage(INA226_128_SAMPLES);
+    ina226.setBusVoltageConversionTime(INA226_1100_us);
+    ina226.setShuntVoltageConversionTime(INA226_1100_us);
+    ina226.setModeShuntBusContinuous();
   }
   
   int relayPins[] = {RELAY1_PIN, RELAY2_PIN, RELAY3_PIN, RELAY4_PIN, RELAY5_PIN};
@@ -435,18 +438,18 @@ void drawRelayIcon(int x, int y, bool state) {
 
 // ==================== 点灯数据更新 ====================
 void updateBlinkerData() {
-  NUM_POWER.print(power, 1);
-  NUM_KWH.print(accumulatedKWh, 3);
-  NUM_VOLT.print(busVoltage, 2);
-  NUM_BATTERY.print(batteryPercent, 0);
-  NUM_DAH.print(accumulatedAH, 2);
-  NUM_DWH.print(dailyCost, 2);
-  NUM_CURRENT.print(current, 3);
-  NUM_BVM.print(fullVoltage, 1);
-  NUM_BAH.print(batteryCapacity, 0);
+  NUM_POWER.print(power);
+  NUM_KWH.print(accumulatedKWh);
+  NUM_VOLT.print(busVoltage);
+  NUM_BATTERY.print(batteryPercent);
+  NUM_DAH.print(accumulatedAH);
+  NUM_DWH.print(dailyCost);
+  NUM_CURRENT.print(current);
+  NUM_BVM.print(fullVoltage);
+  NUM_BAH.print(batteryCapacity);
   static int chartCounter = 0;
   chartCounter++;
-  if (chartCounter >= 5) { CHART_POWER.point(power, busVoltage, current); chartCounter = 0; }
+  // 图表功能暂未实现
 }
 
 // ==================== 按钮回调 ====================
