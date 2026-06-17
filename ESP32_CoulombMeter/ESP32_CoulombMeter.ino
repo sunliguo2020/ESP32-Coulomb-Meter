@@ -286,7 +286,21 @@ void setupDisplay() {
 }
 
 void setupBlinker() {
-  Blinker.begin(auth);
+  // 读取已保存的WiFi凭据，Blinker需要3个参数初始化
+  preferences.begin("coulomb", true);
+  String savedSSID = preferences.getString("wifiSSID", "");
+  String savedPass = preferences.getString("wifiPass", "");
+  preferences.end();
+
+  if (savedSSID.length() > 0) {
+    Blinker.begin(auth, savedSSID.c_str(), savedPass.c_str());
+    Serial.printf("📶 Blinker 初始化: SSID=%s\n", savedSSID.c_str());
+  } else {
+    // 没有WiFi配置时，传入空字符串（不会成功连接，但避免编译错误）
+    Blinker.begin(auth, "", "");
+    Serial.println("⚠️ 无WiFi配置，Blinker未连接");
+  }
+
   BTN_UPDATE.attach(btnUpdateCallback);
   BTN_OUT1.attach(btnOut1Callback);
   BTN_OUT2.attach(btnOut2Callback);
@@ -835,8 +849,6 @@ void loadData() {
   batteryType = preferences.getInt("battType", 0);
   fullVoltage = preferences.getFloat("fullVolt", 14.6);
   batteryCapacity = preferences.getFloat("battCap", 100);
-  String savedSSID = preferences.getString("wifiSSID", "");
-  String savedPass = preferences.getString("wifiPass", "");
   for (int i = 0; i < 5; i++) { char key[8]; sprintf(key, "relay%d", i); relayState[i] = preferences.getBool(key, false); setRelay(i, relayState[i]); }
   preferences.end();
   Serial.println("✅ 数据已加载");
@@ -850,14 +862,9 @@ void loadData() {
   else if (batteryType == 1) BTN_BT1.print("on");
   else BTN_BT2.print("on");
   
-  if (savedSSID.length() > 0) {
-    Serial.printf("📶 正在自动连接WiFi: %s ...\n", savedSSID.c_str());
-    WiFi.begin(savedSSID.c_str(), savedPass.c_str());
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 40) { delay(500); Serial.print("."); attempts++; }
-    if (WiFi.status() == WL_CONNECTED) {
-      wifiConnected = true;
-      Serial.printf("\n✅ WiFi自动连接成功！IP: %s\n", WiFi.localIP().toString().c_str());
-    } else { Serial.println("\n❌ WiFi自动连接失败"); }
+  // WiFi 由 Blinker 管理，这里只检查连接状态
+  if (WiFi.status() == WL_CONNECTED) {
+    wifiConnected = true;
+    Serial.printf("📶 WiFi 已连接！IP: %s\n", WiFi.localIP().toString().c_str());
   }
 }
