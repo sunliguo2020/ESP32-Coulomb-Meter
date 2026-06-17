@@ -35,7 +35,6 @@
  *   注意：激活状态不受影响
  */
 
-#define BLINKER_APCONFIG
 #define BLINKER_WIFI
 #include <Blinker.h>
 #include "User_Setup.h"    // 优先加载项目目录下的TFT_eSPI配置
@@ -44,6 +43,8 @@
 #include <INA226.h>
 #include <Preferences.h>
 #include <WiFi.h>
+#include <WebServer.h>
+#include <DNSServer.h>
 
 // ==================== 引脚定义 (基于网络表 Netlist_ESP32_库仑计_2026-06-08.enet) ====================
 // I2C - INA226
@@ -92,6 +93,9 @@
 TFT_eSPI tft = TFT_eSPI();   // 引脚配置在 User_Setup.h 中
 INA226 ina226(0x44);  // 实际I2C地址（A1=VS+, A0=GND）
 Preferences preferences;
+WebServer server(80);
+DNSServer dnsServer;
+bool configMode = false;  // 是否处于配网模式
 
 // ==================== 点灯科技密钥 ====================
 char auth[] = "991e3b36375d";
@@ -156,6 +160,10 @@ BlinkerNumber NUM_BAH("num-bah");
 void setupHardware();
 void setupDisplay();
 void setupBlinker();
+void startConfigMode();
+void handleConfigRoot();
+void handleConfigSave();
+void handleConfigNotFound();
 void readSensors();
 void readINA226();
 void readBatteryVoltage();
@@ -203,8 +211,19 @@ void setup() {
   setupHardware();
   setupDisplay();
   loadCalibration();
-  setupBlinker();
-  loadData();
+  
+  // 检查是否有保存的WiFi，如果没有则进入配网模式
+  preferences.begin("coulomb", true);
+  String savedSSID = preferences.getString("wifiSSID", "");
+  preferences.end();
+  
+  if (savedSSID.length() == 0) {
+    Serial.println("📶 未找到WiFi配置，启动配网模式...");
+    startConfigMode();
+  } else {
+    setupBlinker();
+    loadData();
+  }
   
   Serial.println("\n✅ 系统启动完成！");
 }
@@ -282,8 +301,124 @@ void setupBlinker() {
   Serial.println("✅ 点灯科技初始化完成");
 }
 
+// ==================== Web配网模式 ====================
+void startConfigMode() {
+  configMode = true;
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP("ESP32-库仑计", "12345678");
+  Serial.printf("📶 配网热点已启动: ESP32-库仑计 (密码: 12345678)\n");
+  Serial.printf("   配网页面: http://%s\n", WiFi.softAPIP().toString().c_str());
+
+  // DNS劫持：所有域名都指向AP IP（Captive Portal）
+  dnsServer.start(53, "*", WiFi.softAPIP());
+
+  server.on("/", handleConfigRoot);
+  server.on("/save", HTTP_POST, handleConfigSave);
+  server.onNotFound(handleConfigNotFound);
+  server.begin();
+
+  // 屏幕提示
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_WHITE, TFT_NAVY); tft.setTextSize(1);
+  tft.fillRect(0, 0, 240, 22, TFT_NAVY);
+  tft.drawString("ESP32 库仑计 - 配网模式", 3, 4);
+  tft.setTextColor(TFT_YELLOW, TFT_BLACK); tft.setTextSize(2);
+  tft.drawString("WiFi配置", 70, 35);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK); tft.setTextSize(1);
+  tft.drawString("1.连接热点: ESP32-库仑计", 10, 70);
+  tft.drawString("  密码: 12345678", 10, 85);
+  tft.drawString("2.浏览器访问:", 10, 110);
+  tft.setTextColor(TFT_CYAN, TFT_BLACK); tft.setTextSize(2);
+  tft.drawString("192.168.4.1", 40, 130);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK); tft.setTextSize(1);
+  tft.drawString("3.输入WiFi名称和密码", 10, 160);
+  tft.drawString("4.点击连接", 10, 175);
+}
+
+void handleConfigRoot() {
+  String html = R"rawliteral(
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ESP32 库仑计 - WiFi配置</title>
+<style>
+  body{font-family:Arial,sans-serif;max-width:400px;margin:0 auto;padding:20px;background:#1a1a2e;color:#fff}
+  h1{color:#00d4ff;text-align:center;font-size:22px}
+  .card{background:#16213e;border-radius:10px;padding:20px;margin:15px 0}
+  input{width:100%;padding:10px;margin:8px 0;border:1px solid #0f3460;border-radius:5px;
+    background:#0a0a23;color:#fff;font-size:16px;box-sizing:border-box}
+  button{width:100%;padding:12px;background:#00d4ff;color:#000;border:none;border-radius:5px;
+    font-size:18px;font-weight:bold;cursor:pointer;margin-top:10px}
+  button:hover{background:#00b4d8}
+  .info{text-align:center;color:#aaa;font-size:13px;margin-top:10px}
+</style>
+</head><body>
+<h1>ESP32 库仑计</h1>
+<div class="card">
+  <form action="/save" method="POST">
+    <label>WiFi 名称</label>
+    <input type="text" name="ssid" placeholder="输入WiFi名称(仅支持2.4G)">
+    <label>WiFi 密码</label>
+    <input type="password" name="pass" placeholder="输入WiFi密码">
+    <button type="submit">连 接</button>
+  </form>
+  <p class="info">仅支持2.4GHz WiFi</p>
+</div>
+</body></html>
+)rawliteral";
+  server.send(200, "text/html", html);
+}
+
+void handleConfigSave() {
+  String ssid = server.arg("ssid");
+  String pass = server.arg("pass");
+  
+  if (ssid.length() == 0) {
+    server.send(400, "text/html", "<html><body><h3>WiFi名称不能为空！</h3><a href='/'>返回</a></body></html>");
+    return;
+  }
+  
+  // 保存WiFi配置
+  preferences.begin("coulomb", false);
+  preferences.putString("wifiSSID", ssid);
+  preferences.putString("wifiPass", pass);
+  preferences.end();
+  
+  String html = R"rawliteral(
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>配置成功</title>
+<style>body{font-family:Arial;text-align:center;padding:40px;background:#1a1a2e;color:#fff}
+  h2{color:#00ff88}.info{color:#aaa;margin-top:20px}</style>
+</head><body>
+<h2>WiFi配置成功！</h2>
+<p>设备正在连接 WiFi ...</p>
+<p class="info">设备将自动重启</p>
+</body></html>
+)rawliteral";
+  server.send(200, "text/html", html);
+  
+  Serial.printf("📶 收到WiFi配置: %s\n", ssid.c_str());
+  delay(1000);
+  
+  // 重启以应用新配置
+  Serial.println("🔄 正在重启...");
+  ESP.restart();
+}
+
+void handleConfigNotFound() {
+  // Captive Portal：所有未知请求都重定向到配网页面
+  server.sendHeader("Location", "http://" + WiFi.softAPIP().toString() + "/");
+  server.send(302, "text/plain", "");
+}
+
 // ==================== 主循环 ====================
 void loop() {
+  if (configMode) {
+    dnsServer.processNextRequest();
+    server.handleClient();
+    return;
+  }
   Blinker.run();
   processSerialCommand();
   
@@ -360,17 +495,17 @@ void updateDisplay() {
     tft.fillScreen(TFT_BLACK);
     firstRun = false;
     // 静态标签只画一次
+    tft.setTextColor(TFT_CYAN, TFT_BLACK); tft.setTextSize(2);
+    tft.drawString("V", 5, 32);
+    tft.drawString("A", 5, 77);
+    tft.drawString("W", 5, 122);
     tft.setTextColor(TFT_CYAN, TFT_BLACK); tft.setTextSize(1);
-    tft.drawString("V", 5, 30);
-    tft.drawString("A", 125, 30);
-    tft.drawString("W", 5, 65);
-    tft.drawString("BAT", 5, 105);
-    tft.drawString("AH", 5, 145);
-    tft.drawString("KWh", 125, 145);
-    tft.drawString("TEMP", 5, 180);
-    tft.drawString("OUT", 130, 180);
-    tft.drawString("CELL", 5, 215);
-    tft.drawString("FV", 130, 215);
+    tft.drawString("AH", 5, 168);
+    tft.drawString("KWh", 125, 168);
+    tft.drawString("TEMP", 5, 195);
+    tft.drawString("OUT", 130, 195);
+    tft.drawString("CELL", 5, 220);
+    tft.drawString("FV", 130, 220);
     tft.drawFastHLine(0, 23, 240, TFT_DARKGREY);
   }
 
@@ -383,38 +518,39 @@ void updateDisplay() {
     lastWifiState = wifiConnected;
   }
 
-  // 动态数值 - 使用带背景色的文字覆盖旧值
-  tft.setTextColor(TFT_WHITE, TFT_BLACK); tft.setTextSize(2);
-  tft.drawString(String(busVoltage, 2) + "  ", 20, 28);
-  tft.drawString(String(current, 2) + "  ", 140, 28);
+  // 左侧三行大字体：电压 / 电流 / 功率
+  tft.setTextColor(TFT_WHITE, TFT_BLACK); tft.setTextSize(4);
+  tft.drawString(String(busVoltage, 2) + "   ", 30, 30);
+  tft.drawString(String(current, 2) + "   ", 30, 75);
 
-  tft.setTextColor(TFT_YELLOW, TFT_BLACK); tft.setTextSize(3);
-  tft.drawString(String(power, 1) + "  ", 25, 62);
+  tft.setTextColor(TFT_YELLOW, TFT_BLACK); tft.setTextSize(5);
+  tft.drawString(String(power, 1) + "   ", 35, 118);
 
-  drawBatteryIcon(50, 103, 130, 22, batteryPercent);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.drawString(String(batteryPercent, 0) + "%  ", 190, 105);
+  // 右侧大电池图标（调小一点给左侧让空间）
+  drawBatteryIconBig(175, 28, 60, 130, batteryPercent);
 
+  // AH / KWh
   tft.setTextColor(TFT_GREEN, TFT_BLACK);
-  tft.drawString(String(accumulatedAH, 2) + "  ", 35, 145);
-  tft.drawString(String(accumulatedKWh, 3) + "  ", 160, 145);
+  tft.drawString(String(accumulatedAH, 2) + "  ", 35, 155);
+  tft.drawString(String(accumulatedKWh, 3) + "  ", 160, 155);
 
+  // 温度 / 继电器
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.drawString(String(temperature, 1) + "C  ", 55, 180);
+  tft.drawString(String(temperature, 1) + "C  ", 55, 190);
 
-  // 继电器图标 - 仅在状态变化时刷新
   for (int i = 0; i < 5; i++) {
     if (firstRun || relayState[i] != lastRelayState[i]) {
-      drawRelayIcon(165 + i * 14, 180, relayState[i]);
+      drawRelayIcon(165 + i * 14, 190, relayState[i]);
       lastRelayState[i] = relayState[i];
     }
   }
 
+  // 电池类型
   String typeStr[] = {"LFP", "NCM", "Pb"};
   tft.setTextColor(TFT_GREEN, TFT_BLACK);
-  tft.drawString(typeStr[batteryType] + " " + String(batteryCells) + "S  ", 45, 215);
+  tft.drawString(typeStr[batteryType] + " " + String(batteryCells) + "S  ", 45, 220);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.drawString(String(fullVoltage, 1) + "V  ", 155, 215);
+  tft.drawString(String(fullVoltage, 1) + "V  ", 155, 220);
 }
 
 // ==================== 图形化辅助函数 ====================
@@ -426,6 +562,31 @@ void drawBatteryIcon(int x, int y, int w, int h, int percent) {
   int fillW = map(percent, 0, 100, 0, w - 2);
   uint16_t color = (percent > 60) ? TFT_GREEN : ((percent > 20) ? TFT_YELLOW : TFT_RED);
   if (fillW > 0) tft.fillRect(x + 1, y + 1, fillW, h - 2, color);
+}
+
+// 右侧大电池图标（竖向）
+void drawBatteryIconBig(int x, int y, int w, int h, int percent) {
+  // 清除旧图标区域
+  tft.fillRect(x - 2, y - 5, w + 4, h + 10, TFT_BLACK);
+  // 电池顶部凸起（正极）
+  int capW = w / 2;
+  int capH = 4;
+  tft.fillRect(x + (w - capW) / 2, y - capH, capW, capH, TFT_WHITE);
+  // 电池外框
+  tft.drawRect(x, y, w, h, TFT_WHITE);
+  // 竖向填充（从底部向上）
+  int fillH = map(percent, 0, 100, 0, h - 4);
+  uint16_t color = (percent > 60) ? TFT_GREEN : ((percent > 20) ? TFT_YELLOW : TFT_RED);
+  if (fillH > 0) {
+    tft.fillRect(x + 2, y + h - fillH - 2, w - 4, fillH, color);
+  }
+  // 中央百分比文字
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(2);
+  String pct = String(percent, 0) + "%";
+  int tw = tft.textWidth(pct);
+  int th = 16;
+  tft.drawString(pct, x + (w - tw) / 2, y + (h - th) / 2);
 }
 
 void drawWifiIcon(int x, int y, bool connected) {
