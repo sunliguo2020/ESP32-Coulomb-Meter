@@ -195,6 +195,8 @@ void handleATReg(const char *param);
 void handleATWifiConnect(const char *param);
 void handleATInav(const char *param);
 void handleATInac(const char *param);
+void handleATWifiStatus();
+void handleATWifiSaved();
 void printHelp();
 void saveCalibration();
 void loadCalibration();
@@ -707,6 +709,10 @@ void processSerialCommand() {
           handleATInac(cmd.substring(8).c_str());
         } else if (cmd == "AT+RESTORE") {
           handleATRestore();
+        } else if (cmd == "AT+WIFI.STATUS") {
+          handleATWifiStatus();
+        } else if (cmd == "AT+WIFI.SAVED") {
+          handleATWifiSaved();
         } else if (cmd.length() > 0) {
           Serial.println("❌ 未知命令，输入 AT+HELP 查看帮助");
         }
@@ -724,6 +730,8 @@ void printHelp() {
   Serial.println("AT+RST             - 重启设备");
   Serial.println("AT+REG 激活码      - 产品激活");
   Serial.println("AT+WIFI.connect    - 连接WiFi: AT+WIFI.connect SSID PASSWORD");
+  Serial.println("AT+WIFI.STATUS     - 查看WiFi连接状态详情");
+  Serial.println("AT+WIFI.SAVED      - 查看已保存的WiFi名称和密码");
   Serial.println("AT+INAV 实际电压   - 设置电压校准 (输入万用表测量值)");
   Serial.println("AT+INAC 实际电流   - 设置电流校准 (输入万用表测量值)");
   Serial.println("AT+RESTORE         - 恢复出厂设置 (清除数据，不含激活状态)");
@@ -805,6 +813,76 @@ void handleATRestore() {
   Serial.println("   默认热点管理页面: http://192.168.0.1");
   Serial.println("   默认网页与热点密码: 12345678");
   Serial.println("   注意: 激活状态不受影响");
+}
+
+void handleATWifiStatus() {
+  Serial.println("\n================== WiFi 连接状态 ==================");
+  wl_status_t status = WiFi.status();
+  
+  Serial.print("连接状态: ");
+  switch (status) {
+    case WL_CONNECTED:    Serial.println("✅ 已连接"); break;
+    case WL_NO_SSID_AVAIL: Serial.println("❌ 找不到该WiFi"); break;
+    case WL_CONNECT_FAILED: Serial.println("❌ 连接失败 (密码错误)"); break;
+    case WL_IDLE_STATUS:  Serial.println("⏳ 正在连接..."); break;
+    case WL_DISCONNECTED: Serial.println("⛔ 未连接"); break;
+    default:              Serial.printf("未知状态(%d)\n", status);
+  }
+  
+  if (status == WL_CONNECTED) {
+    Serial.printf("   SSID: %s\n", WiFi.SSID().c_str());
+    Serial.printf("   IP地址: %s\n", WiFi.localIP().toString().c_str());
+    Serial.printf("   子网掩码: %s\n", WiFi.subnetMask().toString().c_str());
+    Serial.printf("   网关: %s\n", WiFi.gatewayIP().toString().c_str());
+    Serial.printf("   DNS服务器: %s\n", WiFi.dnsIP().toString().c_str());
+    Serial.printf("   MAC地址: %s\n", WiFi.macAddress().c_str());
+    Serial.printf("   信号强度(RSSI): %d dBm\n", WiFi.RSSI());
+    if (WiFi.RSSI() >= -50)      Serial.println("   信号质量: ★★★★★ (极好)");
+    else if (WiFi.RSSI() >= -60) Serial.println("   信号质量: ★★★★☆ (良好)");
+    else if (WiFi.RSSI() >= -70) Serial.println("   信号质量: ★★★☆☆ (一般)");
+    else if (WiFi.RSSI() >= -80) Serial.println("   信号质量: ★★☆☆☆ (较差)");
+    else                         Serial.println("   信号质量: ★☆☆☆☆ (极差)");
+    Serial.printf("   连接通道: %d\n", WiFi.channel());
+    Serial.printf("   BSSID: %s\n", WiFi.BSSIDstr().c_str());
+  } else if (configMode) {
+    Serial.printf("   热点SSID: ESP32-库仑计\n");
+    Serial.printf("   热点IP: %s\n", WiFi.softAPIP().toString().c_str());
+    Serial.printf("   MAC地址: %s\n", WiFi.softAPmacAddress().c_str());
+    Serial.printf("   已连接客户端数: %d\n", WiFi.softAPgetStationNum());
+  }
+  
+  // 显示WiFi模式
+  wifi_mode_t mode = WiFi.getMode();
+  Serial.print("WiFi模式: ");
+  switch (mode) {
+    case WIFI_MODE_NULL:   Serial.println("无"); break;
+    case WIFI_MODE_STA:    Serial.println("Station(客户端)"); break;
+    case WIFI_MODE_AP:     Serial.println("AP(热点模式)"); break;
+    case WIFI_MODE_APSTA:  Serial.println("AP+Station(混合模式)"); break;
+  }
+  
+  Serial.println("==================================================\n");
+}
+
+void handleATWifiSaved() {
+  Serial.println("\n================== 已保存的WiFi信息 ==================");
+  preferences.begin("coulomb", true);
+  String savedSSID = preferences.getString("wifiSSID", "");
+  String savedPass = preferences.getString("wifiPass", "");
+  preferences.end();
+  
+  if (savedSSID.length() > 0) {
+    Serial.printf("   WiFi名称: %s\n", savedSSID.c_str());
+    Serial.printf("   WiFi密码: %s\n", savedPass.c_str());
+    Serial.println("\n   提示: 输入 AT+WIFI.connect SSID PASSWORD 可修改WiFi配置");
+    Serial.println("   提示: 输入 AT+RESTORE 可清除WiFi配置并进入配网模式");
+  } else {
+    Serial.println("   ⚠️ 未保存任何WiFi配置");
+    Serial.println("   可通过以下方式配置WiFi:");
+    Serial.println("   1. 串口输入: AT+WIFI.connect WIFI名称 WIFI密码");
+    Serial.println("   2. 配网模式: 重启设备进入热点配置模式");
+  }
+  Serial.println("======================================================\n");
 }
 
 // ==================== 校准值存储 ====================
