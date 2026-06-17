@@ -22,8 +22,8 @@
 #define TFT_RST  25   // CN8.5 → U2.10 → GPIO25 (Reset)
 #define TFT_BL   12   // CN8.7 → U2.14 → GPIO12 (Backlight)
 
-// SPI 频率 (ST7789 建议 10~15MHz，过高会导致闪烁)
-#define SPI_FREQUENCY       15000000   // 15MHz
+// SPI 频率 (ST7789 建议 8~10MHz，过高会导致闪烁)
+#define SPI_FREQUENCY       10000000   // 10MHz
 #define SPI_READ_FREQUENCY  10000000
 #define SPI_TOUCH_FREQUENCY  2500000
 

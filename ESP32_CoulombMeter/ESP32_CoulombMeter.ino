@@ -289,7 +289,7 @@ void loop() {
   
   unsigned long now = millis();
   if (now - lastMeasureTime >= 100) { readSensors(); lastMeasureTime = now; }
-  if (now - lastDisplayTime >= 200) { updateDisplay(); lastDisplayTime = now; }
+  if (now - lastDisplayTime >= 500) { updateDisplay(); lastDisplayTime = now; }
   if (now - lastBlinkerTime >= 1000) { updateBlinkerData(); lastBlinkerTime = now; }
   if (now - lastSaveTime >= 60000) { saveData(); lastSaveTime = now; }
   handleButtons();
@@ -352,68 +352,63 @@ void calculateBatteryPercent() {
 
 // ==================== 图形化屏幕显示 ====================
 void updateDisplay() {
-  tft.fillScreen(TFT_BLACK);
-  // 标题栏
+  static bool firstRun = true;
+  if (firstRun) {
+    tft.fillScreen(TFT_BLACK);
+    firstRun = false;
+    // 静态标签只画一次
+    tft.setTextColor(TFT_CYAN, TFT_BLACK); tft.setTextSize(1);
+    tft.drawString("V", 5, 30);
+    tft.drawString("A", 125, 30);
+    tft.drawString("W", 5, 65);
+    tft.drawString("BAT", 5, 105);
+    tft.drawString("AH", 5, 145);
+    tft.drawString("KWh", 125, 145);
+    tft.drawString("TEMP", 5, 180);
+    tft.drawString("OUT", 130, 180);
+    tft.drawString("CELL", 5, 215);
+    tft.drawString("FV", 130, 215);
+    tft.drawFastHLine(0, 23, 240, TFT_DARKGREY);
+  }
+
+  // 标题栏（WiFi状态可能变化，每次刷新）
   tft.fillRect(0, 0, 240, 22, TFT_NAVY);
   tft.setTextColor(TFT_WHITE, TFT_NAVY); tft.setTextSize(1);
   tft.drawString("ESP32 库仑计", 3, 4);
   drawWifiIcon(210, 2, wifiConnected);
-  tft.drawFastHLine(0, 23, 240, TFT_DARKGREY);
-  // 电压 / 电流
-  tft.setTextColor(TFT_CYAN, TFT_BLACK); tft.setTextSize(1);
-  tft.drawString("V", 5, 30);
+
+  // 动态数值 - 使用带背景色的文字覆盖旧值
   tft.setTextColor(TFT_WHITE, TFT_BLACK); tft.setTextSize(2);
-  tft.drawString(String(busVoltage, 2), 20, 28);
-  tft.setTextColor(TFT_CYAN, TFT_BLACK); tft.setTextSize(1);
-  tft.drawString("A", 125, 30);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK); tft.setTextSize(2);
-  tft.drawString(String(current, 2), 140, 28);
-  // 功率
-  tft.setTextColor(TFT_CYAN, TFT_BLACK); tft.setTextSize(1);
-  tft.drawString("W", 5, 65);
+  tft.drawString(String(busVoltage, 2) + "  ", 20, 28);
+  tft.drawString(String(current, 2) + "  ", 140, 28);
+
   tft.setTextColor(TFT_YELLOW, TFT_BLACK); tft.setTextSize(3);
-  tft.drawString(String(power, 1), 25, 62);
-  // 电池
-  int barY = 105;
-  tft.setTextColor(TFT_CYAN, TFT_BLACK); tft.setTextSize(1);
-  tft.drawString("BAT", 5, barY);
-  drawBatteryIcon(50, barY - 2, 130, 22, batteryPercent);
+  tft.drawString(String(power, 1) + "  ", 25, 62);
+
+  drawBatteryIcon(50, 103, 130, 22, batteryPercent);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.drawString(String(batteryPercent, 0) + "%", 190, barY);
-  // AH / KWh
-  int row4Y = 145;
-  tft.setTextColor(TFT_CYAN, TFT_BLACK); tft.setTextSize(1);
-  tft.drawString("AH", 5, row4Y);
+  tft.drawString(String(batteryPercent, 0) + "%  ", 190, 105);
+
   tft.setTextColor(TFT_GREEN, TFT_BLACK);
-  tft.drawString(String(accumulatedAH, 2), 35, row4Y);
-  tft.setTextColor(TFT_CYAN, TFT_BLACK);
-  tft.drawString("KWh", 125, row4Y);
-  tft.setTextColor(TFT_GREEN, TFT_BLACK);
-  tft.drawString(String(accumulatedKWh, 3), 160, row4Y);
-  // 温度 / 继电器
-  int row5Y = 180;
-  tft.setTextColor(TFT_CYAN, TFT_BLACK); tft.setTextSize(1);
-  tft.drawString("TEMP", 5, row5Y);
+  tft.drawString(String(accumulatedAH, 2) + "  ", 35, 145);
+  tft.drawString(String(accumulatedKWh, 3) + "  ", 160, 145);
+
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.drawString(String(temperature, 1) + "C", 55, row5Y);
-  tft.setTextColor(TFT_CYAN, TFT_BLACK);
-  tft.drawString("OUT", 130, row5Y);
-  for (int i = 0; i < 5; i++) drawRelayIcon(165 + i * 14, row5Y, relayState[i]);
-  // 电池类型
-  int row6Y = 215;
-  tft.setTextColor(TFT_CYAN, TFT_BLACK);
-  tft.drawString("CELL", 5, row6Y);
+  tft.drawString(String(temperature, 1) + "C  ", 55, 180);
+
+  for (int i = 0; i < 5; i++) drawRelayIcon(165 + i * 14, 180, relayState[i]);
+
   String typeStr[] = {"LFP", "NCM", "Pb"};
   tft.setTextColor(TFT_GREEN, TFT_BLACK);
-  tft.drawString(typeStr[batteryType] + " " + String(batteryCells) + "S", 45, row6Y);
-  tft.setTextColor(TFT_CYAN, TFT_BLACK);
-  tft.drawString("FV", 130, row6Y);
+  tft.drawString(typeStr[batteryType] + " " + String(batteryCells) + "S  ", 45, 215);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.drawString(String(fullVoltage, 1) + "V", 155, row6Y);
+  tft.drawString(String(fullVoltage, 1) + "V  ", 155, 215);
 }
 
 // ==================== 图形化辅助函数 ====================
 void drawBatteryIcon(int x, int y, int w, int h, int percent) {
+  // 清除旧图标区域
+  tft.fillRect(x, y, w + 4, h, TFT_BLACK);
   tft.drawRect(x, y, w, h, TFT_WHITE);
   tft.fillRect(x + w, y + h / 4, 3, h / 2, TFT_WHITE);
   int fillW = map(percent, 0, 100, 0, w - 2);
