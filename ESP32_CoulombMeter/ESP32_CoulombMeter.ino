@@ -265,7 +265,7 @@ void setupHardware() {
 
 void setupDisplay() {
   tft.init();
-  tft.setRotation(0);
+  tft.setRotation(3);
   tft.fillScreen(TFT_BLACK);
   tft.drawRect(0, 0, 240, 240, TFT_NAVY);
   tft.fillRect(1, 1, 238, 22, TFT_NAVY);
