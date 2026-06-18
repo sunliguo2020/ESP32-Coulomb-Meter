@@ -736,7 +736,7 @@ void printHelp() {
   Serial.println("AT+INAC 实际电流   - 设置电流校准 (输入万用表测量值)");
   Serial.println("AT+RESTORE         - 恢复出厂设置 (清除数据，不含激活状态)");
   Serial.println("====================================================\n");
-  Serial.printf("当前状态: 激活=%s, WiFi=%s\n", activated ? "已激活" : "未激活", wifiConnected ? "已连接" : "未连接");
+  Serial.printf("当前状态: 激活=%s, WiFi=%s\n", activated ? "已激活" : "未激活", WiFi.status() == WL_CONNECTED ? "已连接" : "未连接");
   Serial.printf("电压校准偏移: %.3fV, 电流校准偏移: %.3fA\n", voltageCalibOffset, currentCalibOffset);
   Serial.printf("当前读数: %.2fV, %.2fA, %.1fW\n", busVoltage, current, power);
 }
