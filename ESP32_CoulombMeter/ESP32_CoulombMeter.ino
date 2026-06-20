@@ -30,7 +30,7 @@
  * ✔设置输出电流校验：AT+INAC 实际电流
  * ✔恢复出厂设置：AT+RESTORE
  *   默认网页管理员：admin
- *   默认热点管理页面：http://192.168.0.1
+ *   默认热点管理页面：http://192.168.4.1
  *   默认网页与热点密码：12345678
  *   注意：激活状态不受影响
  */
@@ -81,6 +81,12 @@
 
 // ADC - 电池电压检测
 #define ADC_BATTERY 34  // U2.6 → GPIO34
+
+// ==================== 电压分压网络 ====================
+// INA226 VBUS引脚通过R52(39kΩ)+R54(20kΩ)分压:
+// V_VBUS / V_IN = R54 / (R52+R54) = 20k / (39k+20k) ≈ 0.3390
+// 代码中需乘以分压比倒数以还原实际输入电压
+#define VBUS_DIVIDER_RATIO  ((39.0 + 20.0) / 20.0)  // ≈ 2.95
 
 // 串口命令缓冲区
 #define SERIAL_BUF_SIZE  256
@@ -265,6 +271,7 @@ void setupHardware() {
 
 void setupDisplay() {
   tft.init();
+  // 1.33寸屏幕建议竖屏显示，旋转180度（根据实际安装调整）
   tft.setRotation(3);
   tft.fillScreen(TFT_BLACK);
   tft.drawRect(0, 0, 240, 240, TFT_NAVY);
@@ -464,7 +471,7 @@ void readSensors() {
 }
 
 void readINA226() {
-  busVoltage = ina226.getBusVoltage() + voltageCalibOffset;
+  busVoltage = ina226.getBusVoltage() * VBUS_DIVIDER_RATIO + voltageCalibOffset;
   shuntVoltage = ina226.getShuntVoltage_mV();
   current = ina226.getCurrent() + currentCalibOffset;
   power = busVoltage * current;
@@ -785,9 +792,9 @@ void handleATWifiConnect(const char *param) {
 void handleATInav(const char *param) {
   float actualVoltage = String(param).toFloat();
   if (actualVoltage <= 0) { Serial.println("❌ 无效电压值"); return; }
-  voltageCalibOffset = actualVoltage - ina226.getBusVoltage();
+  voltageCalibOffset = actualVoltage - (ina226.getBusVoltage() * VBUS_DIVIDER_RATIO);
   saveCalibration();
-  Serial.printf("✅ 电压校准完成！偏移: %.3fV, 校准后: %.3fV\n", voltageCalibOffset, ina226.getBusVoltage() + voltageCalibOffset);
+  Serial.printf("✅ 电压校准完成！偏移: %.3fV, 校准后: %.3fV\n", voltageCalibOffset, ina226.getBusVoltage() * VBUS_DIVIDER_RATIO + voltageCalibOffset);
 }
 
 void handleATInac(const char *param) {
@@ -810,7 +817,7 @@ void handleATRestore() {
   for (int i = 0; i < 5; i++) { relayState[i] = false; setRelay(i, false); }
   Serial.println("✅ 恢复出厂设置完成！");
   Serial.println("   默认网页管理员: admin");
-  Serial.println("   默认热点管理页面: http://192.168.0.1");
+  Serial.println("   默认热点管理页面: http://192.168.4.1");
   Serial.println("   默认网页与热点密码: 12345678");
   Serial.println("   注意: 激活状态不受影响");
 }
