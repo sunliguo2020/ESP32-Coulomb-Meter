@@ -141,6 +141,8 @@ unsigned long lastDisplayTime = 0;
 unsigned long lastSaveTime = 0;
 unsigned long lastBlinkerTime = 0;
 
+bool showConfigScreen = false;
+
 float voltageCalibOffset = 0.0;
 float currentCalibOffset = 0.0;
 
@@ -193,6 +195,9 @@ void loadData();
 void syncNetworkTime();
 String getTimeString();
 void updateWifiState();
+void drawConfigScreen();
+String getDeviceId();
+String getSavedWifiSSID();
 void handleButtons();
 void setRelay(int index, bool state);
 void btnUpdateCallback(const String &state);
@@ -628,6 +633,11 @@ void calculateBatteryPercent() {
 
 // ==================== 图形化屏幕显示 ====================
 void updateDisplay() {
+  if (showConfigScreen) {
+    drawConfigScreen();
+    return;
+  }
+
   static bool firstRun = true;
   static bool lastWifiState = false;
   static bool lastRelayState[5] = {false, false, false, false, false};
@@ -810,9 +820,27 @@ void handleButtons() {
   bool menu = digitalRead(KEY_MENU);
   bool left = digitalRead(KEY_LEFT);
   bool right = digitalRead(KEY_RIGHT);
-  if (lastMenu == HIGH && menu == LOW) Serial.println("MENU按键");
-  if (lastLeft == HIGH && left == LOW) Serial.println("LEFT按键");
-  if (lastRight == HIGH && right == LOW) Serial.println("RIGHT按键");
+
+  if (lastMenu == HIGH && menu == LOW) {
+    if (!showConfigScreen) {
+      showConfigScreen = true;
+      Serial.println("进入配置界面");
+    } else {
+      showConfigScreen = false;
+      Serial.println("退出配置界面");
+    }
+  }
+
+  if (showConfigScreen && ((lastLeft == HIGH && left == LOW) || (lastRight == HIGH && right == LOW))) {
+    showConfigScreen = false;
+    Serial.println("退出配置界面");
+  }
+
+  if (!showConfigScreen) {
+    if (lastLeft == HIGH && left == LOW) Serial.println("LEFT按键");
+    if (lastRight == HIGH && right == LOW) Serial.println("RIGHT按键");
+  }
+
   lastMenu = menu; lastLeft = left; lastRight = right;
 }
 
@@ -1152,6 +1180,42 @@ void loadBlinkerAuth() {
   } else {
     Serial.println("⚠️ 未设置点灯科技密钥，请使用 AT+DD ID 设置");
   }
+}
+
+String getDeviceId() {
+  return WiFi.macAddress();
+}
+
+String getSavedWifiSSID() {
+  preferences.begin("coulomb", true);
+  String savedSSID = preferences.getString("wifiSSID", "未配置");
+  preferences.end();
+  return savedSSID;
+}
+
+void drawConfigScreen() {
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextSize(2);
+  tft.setTextColor(TFT_CYAN, TFT_BLACK);
+  tft.drawString("设备信息", 60, 10);
+  tft.drawFastHLine(10, 34, 220, TFT_WHITE);
+
+  tft.setTextSize(1);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.drawString("设备号:", 10, 50);
+  tft.drawString(getDeviceId(), 90, 50);
+
+  tft.drawString("Blinker:", 10, 70);
+  tft.drawString(auth[0] ? String(auth) : "未配置", 90, 70);
+
+  tft.drawString("WiFi:", 10, 90);
+  tft.drawString(getSavedWifiSSID(), 90, 90);
+
+  tft.drawString("LAN IP:", 10, 110);
+  tft.drawString(WiFi.localIP().toString(), 90, 110);
+
+  tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+  tft.drawString("MENU: 返回", 10, 140);
 }
 
 // ==================== 数据保存与加载 ====================
