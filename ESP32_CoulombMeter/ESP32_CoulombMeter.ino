@@ -24,10 +24,15 @@
  * 
  * 【常用串口指令】
  * ✔重启设备：AT+RST
+ * ✔在线升级：AT+UPDATE
  * ✔产品激活：AT+REG 激活码
- * ✔通过命令快速连接WIFI：AT+WIFI.connect WIFI名称 WIFI密码
- * ✔设置输出电压校验：AT+INAV 实际电压
- * ✔设置输出电流校验：AT+INAC 实际电流
+ * ✔连接WiFi：AT+WIFI SSID 密码
+ * ✔输入电压校验：AT+INAV 实际的输入电压值
+ * ✔输入电流校验：AT+INAC 实际的输入电流值
+ * ✔输出电压校验：AT+ONAV 实际的输出电压值
+ * ✔输出电流校验：AT+ONAC 实际的输出电流值
+ * ✔点灯科技密钥查询：AT+DD
+ * ✔修改点灯科技密钥：AT+DD ID
  * ✔恢复出厂设置：AT+RESTORE
  *   默认网页管理员：admin
  *   默认热点管理页面：http://192.168.4.1
@@ -105,7 +110,7 @@ DNSServer dnsServer;
 bool configMode = false;  // 是否处于配网模式
 
 // ==================== 点灯科技密钥 ====================
-char auth[] = "991e3b36375d";
+char auth[64] = ""; // 默认空，使用 AT+DD ID 设置或从保存数据加载
 
 // ==================== 全局变量 ====================
 float busVoltage = 0.0;
@@ -205,13 +210,19 @@ void handleATRestore();
 void handleATRst();
 void handleATReg(const char *param);
 void handleATWifiConnect(const char *param);
+void handleATUpdate();
 void handleATInav(const char *param);
 void handleATInac(const char *param);
+void handleATOnav(const char *param);
+void handleATOnac(const char *param);
+void handleATDD(const char *param);
 void handleATWifiStatus();
 void handleATWifiSaved();
 void printHelp();
 void saveCalibration();
 void loadCalibration();
+void saveBlinkerAuth();
+void loadBlinkerAuth();
 
 // ==================== 设置函数 ====================
 void setup() {
@@ -225,6 +236,7 @@ void setup() {
   setupHardware();
   setupDisplay();
   loadCalibration();
+  loadBlinkerAuth();
   
   // 检查是否有保存的WiFi，如果没有则进入配网模式
   preferences.begin("coulomb", true);
@@ -820,14 +832,24 @@ void processSerialCommand() {
           printHelp();
         } else if (cmd == "AT+RST") {
           handleATRst();
+        } else if (cmd == "AT+UPDATE") {
+          handleATUpdate();
         } else if (cmd.startsWith("AT+REG ")) {
           handleATReg(cmd.substring(7).c_str());
+        } else if (cmd.startsWith("AT+WIFI ")) {
+          handleATWifiConnect(cmd.substring(8).c_str());
         } else if (cmd.startsWith("AT+WIFI.connect ")) {
           handleATWifiConnect(cmd.substring(16).c_str());
         } else if (cmd.startsWith("AT+INAV ")) {
           handleATInav(cmd.substring(8).c_str());
         } else if (cmd.startsWith("AT+INAC ")) {
           handleATInac(cmd.substring(8).c_str());
+        } else if (cmd.startsWith("AT+ONAV ")) {
+          handleATOnav(cmd.substring(8).c_str());
+        } else if (cmd.startsWith("AT+ONAC ")) {
+          handleATOnac(cmd.substring(8).c_str());
+        } else if (cmd.startsWith("AT+DD")) {
+          handleATDD(cmd.length() > 5 ? cmd.substring(5).c_str() : "");
         } else if (cmd == "AT+RESTORE") {
           handleATRestore();
         } else if (cmd == "AT+WIFI.STATUS") {
@@ -848,13 +870,17 @@ void processSerialCommand() {
 void printHelp() {
   Serial.println("\n=================== AT 指令帮助 ===================");
   Serial.println("AT+HELP            - 显示此帮助");
-  Serial.println("AT+RST             - 重启设备");
+  Serial.println("AT+RST             - 硬件重启设备");
+  Serial.println("AT+UPDATE          - 在线升级固件");
   Serial.println("AT+REG 激活码      - 产品激活");
-  Serial.println("AT+WIFI.connect    - 连接WiFi: AT+WIFI.connect SSID PASSWORD");
+  Serial.println("AT+WIFI SSID 密码   - 连接WiFi");
   Serial.println("AT+WIFI.STATUS     - 查看WiFi连接状态详情");
   Serial.println("AT+WIFI.SAVED      - 查看已保存的WiFi名称和密码");
-  Serial.println("AT+INAV 实际电压   - 设置电压校准 (输入万用表测量值)");
-  Serial.println("AT+INAC 实际电流   - 设置电流校准 (输入万用表测量值)");
+  Serial.println("AT+INAV 电压值     - 输入电压校验");
+  Serial.println("AT+INAC 电流值     - 输入电流校验");
+  Serial.println("AT+ONAV 电压值     - 输出电压校验");
+  Serial.println("AT+ONAC 电流值     - 输出电流校准");
+  Serial.println("AT+DD              - 显示/修改点灯科技密钥");
   Serial.println("AT+RESTORE         - 恢复出厂设置 (清除数据，不含激活状态)");
   Serial.println("====================================================\n");
   Serial.printf("当前状态: 激活=%s, WiFi=%s\n", activated ? "已激活" : "未激活", WiFi.status() == WL_CONNECTED ? "已连接" : "未连接");
@@ -918,7 +944,45 @@ void handleATInac(const char *param) {
   if (actualCurrent < 0) { Serial.println("❌ 无效电流值"); return; }
   currentCalibOffset = actualCurrent - ina226.getCurrent();
   saveCalibration();
-  Serial.printf("✅ 电流校准完成！偏移: %.3fA, 校准后: %.3fA\n", currentCalibOffset, ina226.getCurrent() + currentCalibOffset);
+  Serial.printf("✅ 输入电流校准完成！偏移: %.3fA, 校准后: %.3fA\n", currentCalibOffset, ina226.getCurrent() + currentCalibOffset);
+}
+
+void handleATOnav(const char *param) {
+  float actualVoltage = String(param).toFloat();
+  if (actualVoltage <= 0) { Serial.println("❌ 无效电压值"); return; }
+  voltageCalibOffset = actualVoltage - (ina226.getBusVoltage() * VBUS_DIVIDER_RATIO);
+  saveCalibration();
+  Serial.printf("✅ 输出电压校准完成！偏移: %.3fV, 校准后: %.3fV\n", voltageCalibOffset, ina226.getBusVoltage() * VBUS_DIVIDER_RATIO + voltageCalibOffset);
+}
+
+void handleATOnac(const char *param) {
+  float actualCurrent = String(param).toFloat();
+  if (actualCurrent < 0) { Serial.println("❌ 无效电流值"); return; }
+  currentCalibOffset = actualCurrent - ina226.getCurrent();
+  saveCalibration();
+  Serial.printf("✅ 输出电流校准完成！偏移: %.3fA, 校准后: %.3fA\n", currentCalibOffset, ina226.getCurrent() + currentCalibOffset);
+}
+
+void handleATUpdate() {
+  Serial.println("🔄 在线升级启动中...");
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_YELLOW); tft.setTextSize(2);
+  tft.drawString("OTA升级中...", 20, 60);
+  Blinker.print("即将进入固件升级模式...");
+  delay(1000);
+  Blinker.ota();
+}
+
+void handleATDD(const char *param) {
+  String id = String(param);
+  id.trim();
+  if (id.length() == 0) {
+    Serial.printf("🔑 当前点灯科技密钥: %s\n", auth);
+  } else {
+    id.toCharArray(auth, sizeof(auth));
+    saveBlinkerAuth();
+    Serial.printf("✅ 点灯科技密钥已更新: %s\n", auth);
+  }
 }
 
 void handleATRestore() {
@@ -1070,6 +1134,24 @@ void loadCalibration() {
   if (activated) Serial.println("✅ 产品已激活");
   if (voltageCalibOffset != 0.0 || currentCalibOffset != 0.0)
     Serial.printf("📐 校准值: 电压偏移=%.3fV, 电流偏移=%.3fA\n", voltageCalibOffset, currentCalibOffset);
+}
+
+void saveBlinkerAuth() {
+  preferences.begin("coulomb", false);
+  preferences.putString("blinkerAuth", auth);
+  preferences.end();
+}
+
+void loadBlinkerAuth() {
+  preferences.begin("coulomb", true);
+  String savedAuth = preferences.getString("blinkerAuth", "");
+  preferences.end();
+  if (savedAuth.length() > 0) {
+    savedAuth.toCharArray(auth, sizeof(auth));
+    Serial.println("✅ 已加载保存的点灯科技密钥");
+  } else {
+    Serial.println("⚠️ 未设置点灯科技密钥，请使用 AT+DD ID 设置");
+  }
 }
 
 // ==================== 数据保存与加载 ====================
