@@ -45,6 +45,7 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <DNSServer.h>
+#include <time.h>
 
 // ==================== 引脚定义 (基于网络表 Netlist_ESP32_库仑计_2026-06-08.enet) ====================
 // I2C - INA226
@@ -64,7 +65,7 @@
 #define KEY_MENU   0   // MENU按键 → U2.25 → GPIO0
 #define KEY_LEFT   18  // LEFT按键 → U2.30 → GPIO18
 #define KEY_RIGHT  19  // RIGHT按键 → U2.31 → GPIO19
-
+// EN 按键直接连接到 ESP32 模块 EN 脚，不作为普通 GPIO 输入读取
 // 继电器输出
 #define RELAY1_PIN  14  // U2.13 → GPIO14
 #define RELAY2_PIN  27  // U2.12 → GPIO27
@@ -127,6 +128,8 @@ float batteryCapacity = 100;
 bool relayState[5] = {false, false, false, false, false};
 
 bool wifiConnected = false;
+bool timeSynced = false;
+unsigned long lastTimeSync = 0;
 bool activated = false;
 unsigned long lastMeasureTime = 0;
 unsigned long lastDisplayTime = 0;
@@ -182,6 +185,9 @@ void drawWifiIcon(int x, int y, bool connected);
 void updateBlinkerData();
 void saveData();
 void loadData();
+void syncNetworkTime();
+String getTimeString();
+void updateWifiState();
 void handleButtons();
 void setRelay(int index, bool state);
 void btnUpdateCallback(const String &state);
@@ -261,9 +267,10 @@ void setupHardware() {
   Serial1.begin(9600, SERIAL_8N1, BMS_RX, BMS_TX);
   Serial.println("✅ BMS串口(UART1)初始化完成 (RX=GPIO16, TX=GPIO17)");
 
-  pinMode(KEY_MENU, INPUT_PULLUP);
-  pinMode(KEY_LEFT, INPUT_PULLUP);
-  pinMode(KEY_RIGHT, INPUT_PULLUP);
+  pinMode(KEY_MENU, INPUT_PULLUP);   // MENU 按键，使用内部上拉
+  pinMode(KEY_LEFT, INPUT_PULLUP);   // LEFT 按键，使用内部上拉
+  pinMode(KEY_RIGHT, INPUT_PULLUP);  // RIGHT 按键，使用内部上拉
+  // EN 按键连接到 ESP32 模块 EN 脚，不能当作普通 GPIO 读取
   
   analogReadResolution(12);
   Serial.println("✅ 硬件初始化完成");
@@ -304,6 +311,11 @@ void setupBlinker() {
   if (savedSSID.length() > 0) {
     Blinker.begin(auth, savedSSID.c_str(), savedPass.c_str());
     Serial.printf("📶 Blinker 初始化: SSID=%s\n", savedSSID.c_str());
+    if (WiFi.status() == WL_CONNECTED) {
+      wifiConnected = true;
+      timeSynced = false;
+      lastTimeSync = 0;
+    }
   } else {
     // 没有WiFi配置时，传入空字符串（不会成功连接，但避免编译错误）
     Blinker.begin(auth, "", "");
@@ -436,47 +448,141 @@ void handleConfigNotFound() {
 }
 
 // ==================== 主循环 ====================
+/**
+ * @brief Arduino 主循环，负责按时间调度执行各项任务
+ * 
+ * 本函数采用非阻塞方式，通过 millis() 判断各任务是否到达执行间隔。
+ * 支持配置模式（WiFi AP + DNS + Web 服务器）与正常运行模式，
+ * 并定期执行传感器读取、显示刷新、物联网数据上报、数据存储及按键处理。
+ */
 void loop() {
+  // ----- 配置模式处理 -----
+  // 若当前处于配网模式（configMode = true），则仅处理 DNS 和 Web 服务器请求，
+  // 不执行其他任务，直到用户完成配置并重启。
   if (configMode) {
-    dnsServer.processNextRequest();
-    server.handleClient();
-    return;
+    dnsServer.processNextRequest();  // 处理 DNS 解析请求（用于 captive portal）
+    server.handleClient();           // 处理 HTTP 客户端请求（配置页面）
+    return;                          // 直接返回，跳过后续所有任务
   }
+  // ----- 正常运行模式 -----
+  // 处理 Blinker 物联网框架的后台任务（如保持 MQTT 连接、处理云端指令）
   Blinker.run();
+  // 处理通过串口发送的命令（如调试指令、参数修改）
   processSerialCommand();
-  
+
+  updateWifiState();
+  if (wifiConnected && !timeSynced && millis() - lastTimeSync >= 10000) {
+    syncNetworkTime();
+    lastTimeSync = millis();
+  }
+
+  // 获取当前系统运行时间（毫秒）
   unsigned long now = millis();
-  if (now - lastMeasureTime >= 100) { readSensors(); lastMeasureTime = now; }
-  if (now - lastDisplayTime >= 500) { updateDisplay(); lastDisplayTime = now; }
-  if (now - lastBlinkerTime >= 1000) { updateBlinkerData(); lastBlinkerTime = now; }
-  if (now - lastSaveTime >= 60000) { saveData(); lastSaveTime = now; }
+ // 每 100ms 读取一次传感器（INA226 等），更新全局变量
+  if (now - lastMeasureTime >= 100) {
+    readSensors();          // 调用传感器读取函数（内部可能包含 readINA226()）
+    lastMeasureTime = now;  // 更新上次执行时间
+  }
+
+  // 每 500ms 更新一次显示（OLED/LCD 屏幕刷新）
+  if (now - lastDisplayTime >= 500) {
+    updateDisplay();        // 将当前数据渲染到显示屏
+    lastDisplayTime = now;
+  }
+
+  // 每 1000ms（1秒）向 Blinker 云端上报一次数据（电压、电流、功率等）
+  if (now - lastBlinkerTime >= 1000) {
+    updateBlinkerData();    // 将传感器数据发送至 Blinker 平台
+    lastBlinkerTime = now;
+  }
+
+  // 每 60000ms（1分钟）将当前数据保存到 EEPROM 或 SD 卡（掉电保存）
+  if (now - lastSaveTime >= 60000) {
+    saveData();             // 存储关键参数或统计数据
+    lastSaveTime = now;
+  }
+
+  // 实时处理按键事件（短按、长按等），用于本地交互（如切换显示界面、校准）
   handleButtons();
 }
 
 // ==================== 传感器读取 ====================
+/**
+ * @brief 读取所有传感器数据，并每秒积分累加电量（Ah）和电能（kWh）
+ * 
+ * 本函数依次调用各传感器读取函数，更新全局变量（电压、电流、功率、温度、电量百分比等）。
+ * 同时以 1 秒为周期，对电流和功率进行时间积分，分别累加为安时（Ah）和千瓦时（kWh），
+ * 并据此计算预估电费（按每度电 0.5 元）。
+ * 
+ * 外部依赖（全局变量）：
+ * - busVoltage, current, power（由 readINA226 更新）
+ * - accumulatedAH：累计安时（Ah）
+ * - accumulatedKWh：累计千瓦时（kWh）
+ * - dailyCost：累计电费（元）
+ */
 void readSensors() {
+  // 静态变量记录上次积分时间，仅在函数内保持，不丢失
   static unsigned long lastIntegrate = 0;
   unsigned long now = millis();
+
+  // 读取 INA226 电压、电流、功率数据（含校准和异常处理）
   readINA226();
+
+  // 读取电池电压（分压电阻测量，用于电量百分比计算）
   readBatteryVoltage();
+
+  // 读取温度（板载或外部温度传感器）
   readTemperature();
+
+  // 根据电池电压计算剩余电量百分比（查表或线性映射）
   calculateBatteryPercent();
+
+  // 每秒执行一次电量与电能积分（时间步长固定为 1 秒）
   if (now - lastIntegrate >= 1000) {
+    // 时间步长转换为小时（1 秒 = 1/3600 小时），用于积分至 Ah 和 kWh
     float dt = 1.0 / 3600.0;
+
+    // 累计安时（Ah）：电流（A）× 时间（h），累加至总安时
     accumulatedAH += current * dt;
+
+    // 累计千瓦时（kWh）：功率（W）× 时间（h）/ 1000，累加至总千瓦时
+    // 此处 power = busVoltage * current，单位为 W
     accumulatedKWh += (busVoltage * current) * dt / 1000.0;
+
+    // 更新上次积分时间戳
     lastIntegrate = now;
+
+    // 按每度电 0.5 元计算当前累计电费（仅供参考，可在外部配置此单价）
     dailyCost = accumulatedKWh * 0.5;
   }
 }
-
+/**
+ * @brief 读取 INA226 电压、电流、功率数据，并进行校准与异常值处理
+ * 
+ * 本函数从 INA226 模块获取总线电压、分流电压、电流和功率，
+ * 并根据外部定义的校准参数进行修正。最后将所有数值限制为非负值，
+ * 并处理无效读数（NaN）。
+ * 
+ * 外部依赖（需在全局或类中定义）：
+ * - ina226：INA226 库对象，提供 getBusVoltage()、getShuntVoltage_mV()、getCurrent()
+ * - VBUS_DIVIDER_RATIO：总线电压分压比（若未使用分压电阻则为 1.0）
+ * - voltageCalibOffset：电压校准偏移量（单位：V）
+ * - currentCalibOffset：电流校准偏移量（单位：mA 或 A，与 getCurrent() 单位一致）
+ */
 void readINA226() {
+  // 读取原始总线电压（V），乘以分压比还原实际电压，再叠加校准偏移量
   busVoltage = ina226.getBusVoltage() * VBUS_DIVIDER_RATIO + voltageCalibOffset;
+  // 读取分流电压（mV），此处仅存储，未参与后续计算（可选用于诊断）
   shuntVoltage = ina226.getShuntVoltage_mV();
+  // 读取原始电流（单位与库配置一致），叠加校准偏移量
   current = ina226.getCurrent() + currentCalibOffset;
+  // 计算功率 = 实际总线电压 × 实际电流（单位需匹配，若电压为 V，电流为 A，则功率为 W）
   power = busVoltage * current;
+   // 异常值保护：若总线电压为 NaN 或负值，则强制归零（避免后续计算错误）
   if (isnan(busVoltage) || busVoltage < 0) busVoltage = 0;
+  // 若电流为 NaN 或负值，强制归零
   if (isnan(current) || current < 0) current = 0;
+  // 若功率为 NaN 或负值（可能因负电流或电压引起），强制归零
   if (isnan(power) || power < 0) power = 0;
 }
 
@@ -533,12 +639,20 @@ void updateDisplay() {
   }
 
   // 标题栏 - 仅在首次或 WiFi 状态变化时刷新
+  String timeString = getTimeString();
   if (firstRun || wifiConnected != lastWifiState) {
     tft.fillRect(0, 0, 240, 22, TFT_NAVY);
     tft.setTextColor(TFT_WHITE, TFT_NAVY); tft.setTextSize(1);
     tft.drawString("ESP32 库仑计", 3, 4);
     drawWifiIcon(210, 2, wifiConnected);
+    tft.setTextColor(TFT_YELLOW, TFT_NAVY);
+    tft.drawString(timeString, 90, 4);
     lastWifiState = wifiConnected;
+  } else {
+    // 更新时间字符串区域
+    tft.fillRect(90, 4, 110, 14, TFT_NAVY);
+    tft.setTextColor(TFT_YELLOW, TFT_NAVY);
+    tft.drawString(timeString, 90, 4);
   }
 
   // 左侧三行大字体：电压 / 电流 / 功率
@@ -783,6 +897,8 @@ void handleATWifiConnect(const char *param) {
   while (WiFi.status() != WL_CONNECTED && attempts < 40) { delay(500); Serial.print("."); attempts++; }
   if (WiFi.status() == WL_CONNECTED) {
     wifiConnected = true;
+    timeSynced = false;
+    lastTimeSync = millis();
     Serial.printf("\n✅ WiFi连接成功！IP: %s\n", WiFi.localIP().toString().c_str());
   } else {
     Serial.println("\n❌ WiFi连接失败，请检查SSID和密码");
@@ -901,6 +1017,50 @@ void saveCalibration() {
   Serial.println("✅ 校准值已保存");
 }
 
+void syncNetworkTime() {
+  if (!wifiConnected) {
+    Serial.println("⚠️ 未连接 WiFi，无法同步时间");
+    return;
+  }
+
+  configTime(8 * 3600, 0, "ntp.aliyun.com", "pool.ntp.org", "time1.google.com");
+  Serial.println("🔄 开始同步网络时间...");
+
+  struct tm timeinfo;
+  if (getLocalTime(&timeinfo, 5000)) {
+    char timeString[64];
+    strftime(timeString, sizeof(timeString), "%Y-%m-%d %H:%M:%S", &timeinfo);
+    Serial.printf("✅ 时间同步成功: %s\n", timeString);
+    timeSynced = true;
+  } else {
+    Serial.println("❌ 时间同步失败，稍后重试");
+  }
+}
+
+void updateWifiState() {
+  bool connectedNow = (WiFi.status() == WL_CONNECTED);
+  if (connectedNow && !wifiConnected) {
+    wifiConnected = true;
+    timeSynced = false;
+    lastTimeSync = 0;
+    Serial.println("📶 WiFi 已连接，准备同步时间");
+  } else if (!connectedNow && wifiConnected) {
+    wifiConnected = false;
+    timeSynced = false;
+    Serial.println("⚠️ WiFi 已断开");
+  }
+}
+
+String getTimeString() {
+  struct tm timeinfo;
+  if (getLocalTime(&timeinfo, 1000)) {
+    char buf[16];
+    strftime(buf, sizeof(buf), "%H:%M:%S", &timeinfo);
+    return String(buf);
+  }
+  return "--:--:--";
+}
+
 void loadCalibration() {
   preferences.begin("coulomb", true);
   activated = preferences.getBool("activated", false);
@@ -938,6 +1098,12 @@ void loadData() {
   preferences.end();
   Serial.println("✅ 数据已加载");
   
+  if (WiFi.status() == WL_CONNECTED) {
+    wifiConnected = true;
+    timeSynced = false;
+    lastTimeSync = 0;
+  }
+
   BTN_OUT1.print(relayState[0] ? "on" : "off");
   BTN_OUT2.print(relayState[1] ? "on" : "off");
   BTN_OUT3.print(relayState[2] ? "on" : "off");

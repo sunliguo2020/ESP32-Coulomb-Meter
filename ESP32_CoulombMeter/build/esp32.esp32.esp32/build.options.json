@@ -1,0 +1,10 @@
+{
+  "additionalFiles": "..\\..,..\\..",
+  "builtInLibrariesFolders": "D:\\ProgramData\\Arduino15\\libraries",
+  "compiler.optimization_flags": "-Os",
+  "customBuildProperties": "",
+  "fqbn": "esp32:esp32:esp32:UploadSpeed=921600,CPUFreq=240,FlashFreq=80,FlashMode=qio,FlashSize=4M,PartitionScheme=huge_app,DebugLevel=none,PSRAM=disabled,LoopCore=1,EventsCore=1,EraseFlash=none,JTAGAdapter=default,ZigbeeMode=default",
+  "hardwareFolders": "D:\\ProgramData\\Arduino15\\packages\\esp32\\hardware\\esp32\\3.3.10,D:\\ProgramData\\Arduino15\\packages\\esp32\\hardware\\esp32\\3.3.10",
+  "otherLibrariesFolders": "d:\\Documents\\Arduino\\libraries",
+  "sketchLocation": "D:\\github\\ESP32-Coulomb-Meter\\ESP32_CoulombMeter"
+}

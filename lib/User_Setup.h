@@ -32,6 +32,7 @@
 
 // 加载字体
 #define LOAD_GLCD   // 基础小字体 (Font 1)
-#define LOAD_FONT2  // 小字体 (Font 2)
-#define LOAD_FONT4  // 中等字体 (Font 4)
-#define LOAD_GFXFF  // FreeFonts
+// 仅保留基础字体以减小程序体积，避免加载额外字体资源
+// #define LOAD_FONT2  // 小字体 (Font 2)
+// #define LOAD_FONT4  // 中等字体 (Font 4)
+// #define LOAD_GFXFF  // FreeFonts
