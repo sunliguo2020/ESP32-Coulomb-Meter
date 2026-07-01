@@ -5,6 +5,8 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <DNSServer.h>
+#include <Preferences.h>
+#include <TFT_eSPI.h>
 
 void startConfigMode();
 void handleConfigModeLoop();

@@ -44,6 +44,7 @@
 #include <Blinker.h>
 #include "User_Setup.h"    // 优先加载项目目录下的TFT_eSPI配置
 #include <TFT_eSPI.h>
+#include <U8g2_for_TFT_eSPI.h>
 #include <Wire.h>
 #include "i2c_scanner.h"
 #include "config_mode.h"
@@ -105,6 +106,7 @@
 
 // ==================== 全局对象 ====================
 TFT_eSPI tft = TFT_eSPI();   // 引脚配置在 User_Setup.h 中
+U8g2_for_TFT_eSPI u8g2;      // 支持中文显示的 U8g2 适配层
 INA226 ina226(0x44);  // 实际I2C地址（A1=VS+, A0=GND）
 Preferences preferences;
 WebServer server(80);
@@ -177,6 +179,8 @@ BlinkerNumber NUM_BAH("num-bah");
 // ==================== 函数声明 ====================
 void setupHardware();
 void setupDisplay();
+void setupChineseDisplay();
+void drawChineseText(int x, int y, const String &text);
 void setupBlinker();
 void readSensors();
 void readINA226();
@@ -295,21 +299,33 @@ void setupHardware() {
   Serial.println("✅ 硬件初始化完成");
 }
 
+void setupChineseDisplay() {
+  u8g2.begin(tft);
+  u8g2.setFont(u8g2_font_u8glib_4_tf);
+  u8g2.setFontMode(1);
+  u8g2.setFontDirection(0);
+}
+
+void drawChineseText(int x, int y, const String &text) {
+  u8g2.setCursor(x, y);
+  u8g2.print(text.c_str());
+}
+
 void setupDisplay() {
   tft.init();
   // 1.33寸屏幕建议竖屏显示，旋转180度（根据实际安装调整）
   tft.setRotation(3);
+  setupChineseDisplay();
   tft.fillScreen(TFT_BLACK);
   tft.drawRect(0, 0, 240, 240, TFT_NAVY);
   tft.fillRect(1, 1, 238, 22, TFT_NAVY);
   tft.setTextColor(TFT_WHITE, TFT_NAVY);
   tft.setTextSize(1);
-  tft.drawString("ESP32 库仑计", 5, 4);
+  tft.drawString("ESP32", 5, 4);
   tft.setTextColor(TFT_CYAN, TFT_BLACK);
   tft.drawString("v1.0", 200, 4);
   drawBatteryIcon(80, 60, 80, 35, 75);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.drawString("初始化中...", 80, 120);
+  drawChineseText(70, 120, "初始化中...");
   for (int i = 0; i <= 100; i += 5) {
     tft.fillRect(40, 160, 160, 12, TFT_BLACK);
     tft.drawRect(40, 160, 160, 12, TFT_WHITE);
@@ -523,14 +539,25 @@ void calculateBatteryPercent() {
 
 // ==================== 图形化屏幕显示 ====================
 void updateDisplay() {
+  static bool firstRun = true;
+  static bool lastWifiState = false;
+  static bool lastRelayState[5] = {false, false, false, false, false};
+  static bool lastShowConfigScreen = false;
+
+  if (showConfigScreen != lastShowConfigScreen) {
+    lastShowConfigScreen = showConfigScreen;
+    if (showConfigScreen) {
+      drawConfigScreen();
+      return;
+    }
+    firstRun = true;
+    tft.fillScreen(TFT_BLACK);
+  }
+
   if (showConfigScreen) {
     drawConfigScreen();
     return;
   }
-
-  static bool firstRun = true;
-  static bool lastWifiState = false;
-  static bool lastRelayState[5] = {false, false, false, false, false};
 
   if (firstRun) {
     tft.fillScreen(TFT_BLACK);
@@ -854,7 +881,7 @@ void handleATInav(const char *param) {
   if (actualVoltage <= 0) { Serial.println("❌ 无效电压值"); return; }
   voltageCalibOffset = actualVoltage - (ina226.getBusVoltage() * VBUS_DIVIDER_RATIO);
   saveCalibration();
-  Serial.printf("✅ 电压校准完成！偏移: %.3fV, 校准后: %.3fV\n", voltageCalibOffset, ina226.getBusVoltage() * VBUS_DIVIDER_RATIO + voltageCalibOffset);
+  Serial.printf("✅ 输入电压校准完成！偏移: %.3fV, 校准后: %.3fV\n", voltageCalibOffset, ina226.getBusVoltage() * VBUS_DIVIDER_RATIO + voltageCalibOffset);
 }
 
 void handleATInac(const char *param) {
@@ -1083,29 +1110,34 @@ String getSavedWifiSSID() {
   return savedSSID;
 }
 
+/**
+ * @brief 绘制设备配置信息界面（屏幕显示）
+ * 显示设备ID、Blinker授权码、WiFi SSID、本地IP地址，并提示返回操作
+ */
 void drawConfigScreen() {
   tft.fillScreen(TFT_BLACK);
-  tft.setTextSize(2);
-  tft.setTextColor(TFT_CYAN, TFT_BLACK);
-  tft.drawString("设备信息", 60, 10);
-  tft.drawFastHLine(10, 34, 220, TFT_WHITE);
-
+  tft.fillRect(0, 0, 240, 24, TFT_NAVY);
+  tft.setTextColor(TFT_WHITE, TFT_NAVY);
   tft.setTextSize(1);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.drawString("设备号:", 10, 50);
-  tft.drawString(getDeviceId(), 90, 50);
-
-  tft.drawString("Blinker:", 10, 70);
-  tft.drawString(auth[0] ? String(auth) : "未配置", 90, 70);
-
-  tft.drawString("WiFi:", 10, 90);
-  tft.drawString(getSavedWifiSSID(), 90, 90);
-
-  tft.drawString("LAN IP:", 10, 110);
-  tft.drawString(WiFi.localIP().toString(), 90, 110);
+  tft.drawString("ESP32 库仑计", 6, 6);
 
   tft.setTextColor(TFT_YELLOW, TFT_BLACK);
-  tft.drawString("MENU: 返回", 10, 140);
+  tft.setTextSize(2);
+  tft.drawString("设备信息", 70, 32);
+
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(1);
+  tft.drawFastHLine(10, 58, 220, TFT_WHITE);
+  tft.drawString("设备号:", 8, 72);
+  tft.drawString(getDeviceId(), 78, 72);
+  tft.drawString("Blinker:", 8, 92);
+  tft.drawString(auth[0] ? String(auth).c_str() : "未配置", 78, 92);
+  tft.drawString("WiFi:", 8, 112);
+  tft.drawString(getSavedWifiSSID().c_str(), 78, 112);
+  tft.drawString("LAN IP:", 8, 132);
+  tft.drawString(WiFi.localIP().toString().c_str(), 78, 132);
+  tft.setTextColor(TFT_CYAN, TFT_BLACK);
+  tft.drawString("MENU: 返回", 8, 164);
 }
 
 // ==================== 数据保存与加载 ====================

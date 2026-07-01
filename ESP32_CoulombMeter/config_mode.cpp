@@ -8,6 +8,45 @@ DNSServer *gDnsServer = nullptr;
 TFT_eSPI *gDisplay = nullptr;
 Preferences *gPreferences = nullptr;
 
+void showConfigGuideScreen() {
+  if (!gDisplay) return;
+  gDisplay->fillScreen(TFT_BLACK);
+  gDisplay->setTextColor(TFT_WHITE, TFT_NAVY);
+  gDisplay->setTextSize(1);
+  gDisplay->fillRect(0, 0, 240, 22, TFT_NAVY);
+  gDisplay->drawString("ESP32 库仑计 - 配网模式", 3, 4);
+  gDisplay->setTextColor(TFT_YELLOW, TFT_BLACK);
+  gDisplay->setTextSize(2);
+  gDisplay->drawString("WiFi配置", 70, 35);
+  gDisplay->setTextColor(TFT_WHITE, TFT_BLACK);
+  gDisplay->setTextSize(1);
+  gDisplay->drawString("1.连接热点: ESP32-库仑计", 10, 70);
+  gDisplay->drawString("  密码: 12345678", 10, 85);
+  gDisplay->drawString("2.浏览器访问:", 10, 110);
+  gDisplay->setTextColor(TFT_CYAN, TFT_BLACK);
+  gDisplay->setTextSize(2);
+  gDisplay->drawString("192.168.4.1", 40, 130);
+  gDisplay->setTextColor(TFT_WHITE, TFT_BLACK);
+  gDisplay->setTextSize(1);
+  gDisplay->drawString("3.输入WiFi名称和密码", 10, 160);
+  gDisplay->drawString("4.点击连接", 10, 175);
+}
+
+void showConfigStatusScreen(const String &title, const String &message) {
+  if (!gDisplay) return;
+  gDisplay->fillScreen(TFT_BLACK);
+  gDisplay->setTextColor(TFT_WHITE, TFT_NAVY);
+  gDisplay->setTextSize(1);
+  gDisplay->fillRect(0, 0, 240, 22, TFT_NAVY);
+  gDisplay->drawString("ESP32 库仑计", 3, 4);
+  gDisplay->setTextColor(TFT_YELLOW, TFT_BLACK);
+  gDisplay->setTextSize(2);
+  gDisplay->drawString(title, 30, 40);
+  gDisplay->setTextColor(TFT_CYAN, TFT_BLACK);
+  gDisplay->setTextSize(1);
+  gDisplay->drawString(message, 15, 90);
+}
+
 void handleConfigRoot() {
   String html = R"rawliteral(
 <!DOCTYPE html>
@@ -57,6 +96,8 @@ void handleConfigSave() {
   gPreferences->putString("wifiPass", pass);
   gPreferences->end();
 
+  showConfigStatusScreen("配置成功", "正在保存配置并重启...");
+
   String html = R"rawliteral(
 <!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>配置成功</title>
@@ -104,26 +145,7 @@ void startConfigMode() {
   gServer->onNotFound(handleConfigNotFound);
   gServer->begin();
 
-  gDisplay->fillScreen(TFT_BLACK);
-  gDisplay->setTextColor(TFT_WHITE, TFT_NAVY);
-  gDisplay->setTextSize(1);
-  gDisplay->fillRect(0, 0, 240, 22, TFT_NAVY);
-  gDisplay->drawString("ESP32 库仑计 - 配网模式", 3, 4);
-  gDisplay->setTextColor(TFT_YELLOW, TFT_BLACK);
-  gDisplay->setTextSize(2);
-  gDisplay->drawString("WiFi配置", 70, 35);
-  gDisplay->setTextColor(TFT_WHITE, TFT_BLACK);
-  gDisplay->setTextSize(1);
-  gDisplay->drawString("1.连接热点: ESP32-库仑计", 10, 70);
-  gDisplay->drawString("  密码: 12345678", 10, 85);
-  gDisplay->drawString("2.浏览器访问:", 10, 110);
-  gDisplay->setTextColor(TFT_CYAN, TFT_BLACK);
-  gDisplay->setTextSize(2);
-  gDisplay->drawString("192.168.4.1", 40, 130);
-  gDisplay->setTextColor(TFT_WHITE, TFT_BLACK);
-  gDisplay->setTextSize(1);
-  gDisplay->drawString("3.输入WiFi名称和密码", 10, 160);
-  gDisplay->drawString("4.点击连接", 10, 175);
+  showConfigGuideScreen();
 }
 
 void handleConfigModeLoop() {
